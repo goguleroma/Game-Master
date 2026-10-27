@@ -31,7 +31,11 @@ Il progetto è in una fase iniziale ma coerente: la struttura progetto è stata 
 - input adapter minimale: presente
 - memoria semplice: presente
 - test di inizializzazione: presenti
-- benchmark fittizi: presenti
+- scenari e loop simulati: verificati
+- gioco simulato a griglia con visuale raggio 4, ostacolo mobile e obiettivo che si sposta ogni due mosse: presente in `simulated_game/`
+- limite verificato: se l'obiettivo è fuori visuale, il planner sceglie `wait`; non esiste ancora esplorazione attiva
+- test automatici: 17 superati con Python 3.14.2 e pytest 9.0.2 (2026-10-27)
+- latenza di `process_frame` su frame mock: media 7,35 µs, p95 9,20 µs su 1.000 chiamate, logging disabilitato; non rappresenta prestazioni su un gioco reale
 
 ### Funzionalità mancanti o placeholder
 - capture reale dello schermo
@@ -45,11 +49,11 @@ Il progetto è in una fase iniziale ma coerente: la struttura progetto è stata 
 
 ## Priorità attuali
 
-1. Validare il loop base con i benchmark fittizi.
-2. Collegare una percezione reale e un frame di prova.
-3. Creare un ambiente di test controllato.
-4. Definire i primi casi di apprendimento dei controlli.
-5. Fare una verifica delle prestazioni del ciclo.
+1. Rafforzare i test del ciclo su percorsi e mappe differenti.
+2. Collegare una fonte di frame reale o un dataset di frame riproducibile.
+3. Implementare input reale solo in un ambiente controllato.
+4. Misurare separatamente acquisizione, percezione, decisione e input su un benchmark reale.
+5. Definire i primi esperimenti di apprendimento dei controlli.
 
 ## Limiti noti
 
@@ -61,4 +65,4 @@ Il progetto è in una fase iniziale ma coerente: la struttura progetto è stata 
 
 ## Prossima azione
 
-Sviluppare il primo livello di test realistico con frame simulato e validare il flusso completo osservazione → decisione → azione → deviazione → memoria.
+Estendere il gioco simulato a mappe di test variabili e mantenere la verifica separata dai benchmark mock e da eventuali prove su un gioco reale.

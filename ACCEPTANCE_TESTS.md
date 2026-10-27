@@ -67,9 +67,28 @@ Definire i test minimamente necessari per verificare che il sistema stia effetti
 - il ciclo completo esegue senza eccezioni;
 - la memoria registra `state`, `action` e `result`.
 
-## Test di perforrformance
+### 7. Gioco simulato a griglia
 
-### 7. Misura del ciclo
+**Contesto:** il giocatore deve raggiungere l'obiettivo evitando un ostacolo.
+
+**Risultato atteso:**
+- il planner trova un percorso valido;
+- l'obiettivo casuale è raggiungibile e distante almeno quattro mosse;
+- un seed riproduce la stessa posizione dell'obiettivo;
+- l'osservazione omette obiettivo e ostacoli oltre il raggio visivo;
+- se l'obiettivo è nascosto, il planner non riceve le sue coordinate (il comportamento corrente atteso è `wait` finché non è implementata l'esplorazione);
+- l'obiettivo mantiene la posizione dopo la prima azione direzionale e cambia dopo la seconda;
+- l'obiettivo non si sovrappone al giocatore o all'ostacolo;
+- l'ostacolo cambia casella dopo ogni azione direzionale senza sovrapporsi al giocatore o all'obiettivo;
+- il planner rivaluta il percorso con la nuova posizione dell'ostacolo;
+- l'adattatore applica ogni mossa allo stato del gioco simulato;
+- il ciclo osserva nuovamente lo stato aggiornato;
+- il gioco segnala la vittoria solo quando il giocatore raggiunge l'obiettivo;
+- le esperienze del ciclo sono registrate in memoria.
+
+## Test di performance
+
+### 8. Misura del ciclo
 
 **Obiettivo:** individuare tempo di esecuzione del loop.
 
