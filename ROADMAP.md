@@ -1,87 +1,93 @@
-# Roadmap
+# ROADMAP.md
 
-## Obiettivo
+## Fase 0 — Fondazione e struttura
 
-Definire una roadmap concreta e verificabile per il progetto Game Master.
+Obiettivo: mettere in piedi la base del progetto in modo coerente.
 
-## Fase 0 - Infrastruttura iniziale
+Criteri di completamento:
+- repository strutturato;
+- documentazione base presente;
+- moduli iniziali creati;
+- principi e roadmap definiti.
 
-- definire struttura del repo
-- impostare standard di sviluppo
-- definire documenti base
-- impostare dipendenze minime
-- creare primo scaffold tecnico
+## Fase 1 — Loop operativo minimo
 
-Criterio di completamento:
-- il repo contiene documentazione base e architettura minima pronto per lo sviluppo.
+Obiettivo: creare il ciclo osservazione → decisione → azione → verifica.
 
-## Fase 1 - Loop base operativo
-
-- definire il ciclo osservazione-decisione-azione-verifica
-- implementare tipi base
-- implementare engine principale
-- creare planner minimale
-- creare input adapter
-- registrare esperienze in memoria
-
-Criterio di completamento:
-- il sistema esegue un ciclo completo e registrabile su un esempio controllato.
-
-## Fase 2 - Percezione e stato del gioco
-
-- implementare cattura dello schermo o dei frame
-- definire estrazione di informazioni visive
-- costruire rappresentazione dello stato interno
-- distinguere oggetti, UI e obiettivi
+Componenti coinvolti:
+- GameEngine
+- Observation
+- GameState
+- Action
+- ActionResult
+- Planner
+- InputAdapter
+- MemoryStore
 
 Criterio di completamento:
-- lo stato del gioco viene convertito in una struttura leggibile e utilizzabile dal planner.
+- il sistema compie un ciclo completo con dati fittizi e registra un risultato.
 
-## Fase 3 - Apprendimento dei controlli
+## Fase 2 — Benchmark fittizi e test deterministici
 
-- scoprire input disponibili e il loro effetto
-- testare combinazioni e durate
-- registrare relazioni input-effetto
-- definire confidenza e incertezza
+Obiettivo: validare la logica del sistema senza un gioco reale.
 
-Criterio di completamento:
-- il sistema è in grado di associare azioni a risultati osservabili in modo tracciabile.
+Criteri di completamento:
+- casi di test per menu, stato vuoto, obiettivo move_left, oggetti sconosciuti;
+- registrazione dei risultati attesi;
+- pipeline di test automatizzati.
 
-## Fase 4 - Memoria e conoscenza
+## Fase 3 — Percezione e acquisizione
 
-- distinguere osservazione, ipotesi, conoscenza verificata
-- gestire memoria a breve e media durata
-- evitare consolidare errori come regole assolute
-- introdurre revisioni delle conoscenze
+Obiettivo: collegare il sistema a sorgenti reali di osservazione.
 
-Criterio di completamento:
-- la memoria migliora il comportamento del sistema su più sessioni.
+Criteri di completamento:
+- capture di frame reali;
+- preprocessing di base;
+- parsing dello stato in una struttura coerente;
+- gestione dei casi in cui i dati non sono disponibili.
 
-## Fase 5 - Pianificazione e strategia
+## Fase 4 — Apprendimento dei controlli
 
-- definire obiettivi e criteri di successo
-- generare azioni candidate e valutarle
-- pianificare brevi sequenze di azioni
-- valutare trade-off tra esplorazione e approccio diretto
+Obiettivo: far acquisire all'agente le relazioni input-effetto.
 
-Criterio di completamento:
-- l'agente esegue piani a breve termine da cui emerge un comportamento coerente.
+Criteri di completamento:
+- registrazione delle relazioni input-effetto;
+- verifiche con esperimenti controllati;
+- conservazione di conoscenze con confidenza e incertezza.
 
-## Fase 6 - Generalizzazione
+## Fase 5 — Memoria e stato del mondo
 
-- verificare riuso di conoscenze tra giochi diversi
-- separare tecniche generali da dettagli specifici
-- testare adattamento a nuovi ambienti
+Obiettivo: approcciare la gestione di conoscenze e contesto.
 
-Criterio di completamento:
-- una parte delle competenze apprese è riutilizzabile in ambienti non identici.
+Criteri di completamento:
+- la memoria distingue osservazione, ipotesi e conoscenze verificate;
+- lo stato del gioco è aggiornato in modo coerente;
+- gli errori non vengono automaticamente trasformati in regole.
 
-## Fase 7 - Ottimizzazione e maturazione
+## Fase 6 — Pianificazione
 
-- migliorare latenza del ciclo
-- ridurre colli di bottiglia
-- migliorare logging e diagnosi
-- stabilire suite di test e benchmark
+Obiettivo: trasformare le azioni in una strategia coerente con gli obiettivi.
 
-Criterio di completamento:
-- il sistema è stabile, osservabile e migliorabile nel tempo.
+Criteri di completamento:
+- definizione di obiettivi e criteri di successo;
+- scelta tra azioni immediate e piani a breve termine;
+- gestione dei casi di blocco o mancanza di progresso.
+
+## Fase 7 — Generalizzazione
+
+Obiettivo: verificare se le conoscenze acquisite possono esser riutilizzate in giochi diversi.
+
+Criteri di completamento:
+- test su ambiente differente dal primo gioco di riferimento;
+- analisi del trasferimento di competenze;
+- separazione delle capacità generali da quelle specifiche del gioco.
+
+## Fase 8 — Ottimizzazione e maturazione
+
+Obiettivo: migliorare prestazioni, affidabilità e stabilità.
+
+Criteri di completamento:
+- benchmark reali delle performance;
+- ottimizzazione del collo di bottiglia;
+- log, diagnostica e gestione di regressioni;
+- versione stabile del progetto.
