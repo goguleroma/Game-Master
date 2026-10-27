@@ -1,44 +1,64 @@
-# Project Status
+# PROJECT_STATUS.md
 
 ## Stato generale
 
-Il progetto è in fase iniziale. La repo è stata inizializzata con la struttura base e i file di documentazione principale.
+Il progetto è in una fase iniziale ma coerente: la struttura progetto è stata creata, il loop base operativa è definito e i benchmark fittizi per il nucleo logico sono disponibili.
 
 ## Stato dei componenti
 
 ### Documentazione
-- README.md: completato
-- ROADMAP.md: completato
-- DECISIONS.md: completato
-- PROJECT_STATUS.md: completato
+- README.md: presente
+- AGENTS.md: presente
+- ARCHITECTURE.md: presente
+- ROADMAP.md: presente
+- DECISIONS.md: presente
+- ACCEPTANCE_TESTS.md: presente
+- EXPERIMENT_LOG.md: presente
 
-### Struttura di sviluppo
-- cartelle principali: create
-- modulo di app: previsto
-- moduli core, perception, decision, control, utils: previsti
-- test base: previsto
+### Struttura del progetto
+- app/: presente
+- core/: presente
+- perception/: presente
+- decision/: presente
+- control/: presente
+- utils/: presente
+- tests/: presente
 
-### Loop operativo
-- engine base: previsto
-- memory base: previsto
-- planner di base: previsto
-- input adapter: previsto
-- percezione iniziale: prevista
+### Funzionalità implementate
+- engine base: presente
+- tipi di base: presenti
+- planner minimale: presente
+- input adapter minimale: presente
+- memoria semplice: presente
+- test di inizializzazione: presenti
+- benchmark fittizi: presenti
 
-## Priorità immediate
+### Funzionalità mancanti o placeholder
+- capture reale dello schermo
+- percezione reale del gioco
+- OCR e riconoscimento visivo
+- input reale su tastiera/mouse
+- gioco target operativo
+- memoria avanzata e persistenza
+- apprendimento dei controlli e delle dinamiche
+- generalizzazione tra giochi
 
-1. definire il primo loop operativo
-2. implementare i tipi di base
-3. costruire engine e planner minimali
-4. verificare esecuzione e logging
-5. aggiungere memoria semplice
+## Priorità attuali
+
+1. Validare il loop base con i benchmark fittizi.
+2. Collegare una percezione reale e un frame di prova.
+3. Creare un ambiente di test controllato.
+4. Definire i primi casi di apprendimento dei controlli.
+5. Fare una verifica delle prestazioni del ciclo.
 
 ## Limiti noti
 
-- il progetto non è ancora verificato su un gioco reale
-- i moduli di percezione e gioco non sono ancora implementati
-- i controlli e le azioni sono ancora generici e da adattare al caso concreto
+- il sistema non è ancora in grado di vedere un gioco reale;
+- la percezione è ancora mockata;
+- la logica di decisione è base e molto semplicistica;
+- non esiste ancora un benchmark reale di gioco;
+- la generalizzazione non è ancora verificata.
 
 ## Prossima azione
 
-Implementare il ciclo base osservazione-decisione-azione e costruire la prima versione eseguibile del motore.
+Sviluppare il primo livello di test realistico con frame simulato e validare il flusso completo osservazione → decisione → azione → deviazione → memoria.

@@ -1,43 +1,49 @@
-# Decisions
+# DECISIONS.md
 
-## Decisione 1 - Struttura iniziale del progetto
+## Decisione 1 — Python come base del progetto
 
-**Decisione:** usare una struttura basata su moduli specializzati per percezione, decisione, controllo, memoria e motore centrale.
+**Decisione:** mantenere Python come lingua principale per la prima fase del progetto.
 
-**Motivazione:** separare responsabilità permette di mantenere il codice leggibile, testabile e facilmente estendibile.
+**Motivazione:** velocità di prototyping, flessibilità, ecosistema di librerie, facilità di iterazione e compatibilità con il lavoro iniziale.
 
-**Alternative considerate:** monolite unico, architettura completamente neurale, sistema esclusivamente basato su regole.
+**Conseguenza:** Rust verrà considerato solo come ottimizzazione di un collo di bottiglia reale, non come soluzione iniziale predefinita.
 
-**Conseguenze:** occorre mantenere interfacce chiare tra i moduli e evitare dipendenze circolari.
+## Decisione 2 — Architettura ibrida
 
-## Decisione 2 - Focus su MVP operativo
+**Decisione:** usare un orchestratore centrale più moduli specializzati.
 
-**Decisione:** non iniziare con una architettura ultra complessa; partire da un loop minimale di osservazione, scelta, azione e verifica.
+**Motivazione:** separazione di responsabilità, modularità e maggiore controllabilità della pipeline.
 
-**Motivazione:** un prototipo funzionante consente di verificare il sistema e correggere le scelte prima di estendere la complessità.
+**Conseguenze:** necessità di contratti dati chiari tra i moduli e di test di integrazione.
 
-**Conseguenze:** le funzioni avanzate saranno integrate solo dopo la stabilizzazione dell'operatività di base.
+## Decisione 3 — Apprendimento autonomo dei controlli
 
-## Decisione 3 - Priorità alla tracciabilità
+**Decisione:** l'agente deve scoprire i controlli e i loro effetti attraverso osservazione e sperimentazione.
 
-**Decisione:** loggare azioni, risultati e decisioni in modo semplice e ordinato.
+**Motivazione:** costruire un agente generalista, non un bot scritto ad hoc per titolo.
 
-**Motivazione:** senza registro dei risultati non è possibile misurare il progresso o capire dove si verificano errori.
+**Conseguenze:** servono esperimenti controllati, log e criteri di confidenza delle relazioni scoperte.
 
-**Conseguenze:** la memoria iniziale dovrà essere semplice ma sufficientemente esplicita per essere utile.
+## Decisione 4 — Fokus sul ciclo operativo minimo
 
-## Decisione 4 - Uso di Python come base
+**Decisione:** prima ottenere un loop minimale funzionante, poi aumentare la complessità.
 
-**Decisione:** mantenere Python come linguaggio principale per la base del progetto.
+**Motivazione:** evitare di costruire un sistema teoricamente avanzato ma non verificabile.
 
-**Motivazione:** il progetto è stato concepito come prototipo e Python consente di iterare rapidamente su architettura e logica.
+**Conseguenze:** i benchmark fittizi sono essenziali e servono come base di validazione.
 
-**Conseguenze:** eventuali ottimizzazioni o migrazioni future dovranno essere motivate da evidenze concrete di prestazione o necessità tecnica.
+## Decisione 5 — Valutare prima la percezione reale
 
-## Decisione 5 - Nessuna prematura complessità
+**Decisione:** prima di qualsiasi decisione su Rust o modelli più avanzati, bisogna misurare dove si perde tempo e dove si sta bloccando il sistema.
 
-**Decisione:** evitare di introdurre moduli di apprendimento avanzato prima che il ciclo base sia verificato.
+**Motivazione:** evitare di ottimizzare il componente sbagliato.
 
-**Motivazione:** la complessità architetturale senza evidenze funzionali produce codice difficile da mantenere.
+**Conseguenze:** le performance vanno misurate separatamente per acquisizione, percezione, decisione e input.
 
-**Conseguenze:** i moduli avanzati saranno aggiunti solo quando il sistema base avrà compiuto un ciclo di lavoro davvero verificato.
+## Decisione 6 — Gestione dell'incertezza
+
+**Decisione:** distinguere tra osservazioni, ipotesi, conoscenze verificate e regole consolidate.
+
+**Motivazione:** evitare che un errore o un risultato sporadico diventi credenza permanente.
+
+**Conseguenze:** la memoria è la base per l'apprendimento affidabile.

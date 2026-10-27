@@ -1,26 +1,36 @@
 # Game-Master
 
-Game Master è un progetto Python in fase di costruzione, pensato per creare un agente AI capace di osservare videogiochi, comprenderne le dinamiche, apprendere i controlli e migliorare autonomamente attraverso l'esperienza.
+Game Master è un progetto di intelligenza artificiale in Python dedicato a creare un agente capace di osservare videogiochi, comprenderne lo stato, imparare i controlli, prendere decisioni in base agli obiettivi e migliorare attraverso l'esperienza.
 
 ## Obiettivo
 
-L'obiettivo finale è costruire un agente in grado di:
-- acquisire dati dal gioco in tempo reale
-- interpretare immagini, UI e oggetti visibili
-- comprendere lo stato del mondo di gioco
-- scegliere azioni coerenti con gli obiettivi
-- eseguire input in modo controllato
-- verificare gli effetti delle azioni
-- registrare esperienze e apprendere continuamente
+L'obiettivo finale non è costruire un bot ad hoc per un solo gioco, ma un agente generalista che:
+- osserva il gioco in tempo reale;
+- interpreta immagini, UI, oggetti, personaggi e eventi;
+- ricostruisce una rappresentazione dello stato del mondo di gioco;
+- scopre controlli, effetti e dinamiche tramite esperimenti controllati;
+- pianifica azioni coerenti con gli obiettivi;
+- verifica i risultati ed aggiorna la memoria;
+- trasferisce conoscenze tra giochi diversi quando è possibile;
+- migliora con l'esperienza, senza dipendere da una sequenza rigida di comandi.
 
-## Principi guida
+## Principi chiave
 
 - Incrementalità: sviluppare in passi piccoli, verificabili e reversibili.
 - Modularità: separare percezione, decisione, controllo e memoria.
-- Osservabilità: loggare eventi, errori e risultati.
-- Robustezza: gestire incertezza, timeout e fallimenti.
-- Generalizzazione: costruire capacità riutilizzabili tra giochi diversi.
-- Verifica: ogni miglioramento deve essere supportato da evidenze o test.
+- Osservabilità: registrare eventi, errori, risultati e metriche.
+- Robustezza: gestire incertezza, timeout, dati mancanti e fallimenti.
+- Generalizzazione: preferire capacità riutilizzabili rispetto a soluzioni specifiche.
+- Sperimentazione controllata: imparare i controlli osservando effetti verificabili.
+- Verifica: ogni miglioramento va supportato da test o prove misurabili.
+
+## Architettura iniziale
+
+Il progetto è pensato attorno a una struttura ibrida:
+- orchestratore centrale (Central Agent);
+- moduli specializzati per percezione, controllo, memoria, pianificazione e apprendimento;
+- sistemi di logging, stato, test e benchmark;
+- loop operativo osserva -> decide -> agisce -> verifica -> apprende.
 
 ## Struttura del repository
 
@@ -48,56 +58,76 @@ game_master/
 │   ├── config.py
 │   └── __init__.py
 ├── tests/
-│   └── test_engine.py
-├── requirements.txt
-├── .gitignore
+│   ├── test_engine.py
+│   └── test_scenarios.py
+├── AGENTS.md
+├── ARCHITECTURE.md
 ├── ROADMAP.md
 ├── PROJECT_STATUS.md
 ├── DECISIONS.md
+├── ACCEPTANCE_TESTS.md
+├── EXPERIMENT_LOG.md
 ├── README.md
+├── requirements.txt
+├── .gitignore
 └── .env.example
 ```
 
-## MVP iniziale
+## Stato corrente
 
-Il primo prototipo è un ciclo operativo minimo composto da:
-1. cattura della schermata di gioco
-2. estrazione dello stato visibile
-3. scelta di una semplice azione
-4. esecuzione dell'input
-5. verifica del risultato
-6. registrazione dell'esperienza
+Il repository ha una base iniziale coerente ma ancora molto minimale:
+- struttura di progetto impostata;
+- loop base operativo definito;
+- tipi dati iniziali e memoria semplice;
+- planner e input adapter mockati per il primo test di logica;
+- benchmark fittizi per validare il flusso senza un gioco reale;
+- assenza di percezione reale e di un gioco target operativo.
 
-## Fasi iniziali
+Questo è il punto corretto per continuare: validare il nucleo logico prima di aggiungere percezione di alto livello o tecnologie più pesanti.
 
-- Audit del repo e definizione della struttura.
-- Implementazione del loop base osservazione-decisione-azione.
-- Definizione dei tipi di dato e delle azioni.
-- Verifica del flusso operativo.
-- Introduzione di memoria e logging.
-- Apprendimento dei controlli e delle conseguenze.
+## Come usare il progetto
 
-## Documentazione di riferimento
+### Installazione
 
-- ROADMAP.md: roadmap e priorità.
-- PROJECT_STATUS.md: stato del progetto.
-- DECISIONS.md: decisioni tecniche e architetturali.
+```bash
+cd Game-Master
+python -m pip install -r requirements.txt
+```
 
-## Requisiti base
+### Test
 
-- Python 3.11+
-- pytest
-- PyAutoGUI o strumenti equivalenti per input e screenshot (se necessario)
-- OpenCV (opzionale per rilevamento visivo iniziale)
+```bash
+python -m pytest
+```
 
-## Primi passi pratici
+### Test specifici
 
-- creare la struttura del repo
-- definire il loop operativo minimo
-- implementare i moduli base di percezione, pianificazione e input
-- verificare il comportamento con un test controllato
-- solo dopo estendere con memoria e apprendimento
+```bash
+python -m pytest tests/test_engine.py
+python -m pytest tests/test_scenarios.py
+```
 
-## Nota
+## Documentazione principale
 
-Il progetto è inizialmente pensato per crescere in modo incrementale e verificabile. L'obiettivo non è costruire subito un sistema generale completo, ma creare una base reale e testabile che possa evolvere in modo coerente.
+- `AGENTS.md` — regole operative per l'agente e la guida di sviluppo.
+- `ARCHITECTURE.md` — architettura dell'applicazione e contratti dati.
+- `ROADMAP.md` — roadmap e priorità di sviluppo.
+- `PROJECT_STATUS.md` — stato reale del progetto.
+- `DECISIONS.md` — decisioni architetturali e tecnico-pratiche.
+- `ACCEPTANCE_TESTS.md` — criteri di accettazione e casi di test.
+- `EXPERIMENT_LOG.md` — log degli esperimenti e risultati verificati.
+
+## Prossimi passi
+
+1. Validare i benchmark fittizi e il loop base.
+2. Aggiungere un primo livello di stato osservabile reale.
+3. Definire un gioco target o ambiente controllato di prova.
+4. Collegare capture, percezione e input reale.
+5. Introdurre i primi elementi di memoria, apprendimento e strategia.
+6. Rivedere la scelta tecnologica solo dopo aver misurato dove si perde tempo.
+
+## Nota tecnica
+
+Rust potrebbe essere utile in un secondo momento, ma non è la scelta iniziale corretta. Per il primo prototipo Python è la soluzione più rapida e più coerente con il progetto e con il tipo di sviluppo richiesto.
+
+Il progetto è pensato per crescere in modo incrementale e verificabile. Non si punta subito a un sistema perfetto, ma a un nucleo che funziona, viene testato e può evolvere.
