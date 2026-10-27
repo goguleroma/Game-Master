@@ -1,0 +1,3 @@
+# Requisiti minimi
+
+pytest>=8.0.0
