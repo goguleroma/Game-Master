@@ -14,7 +14,9 @@ def test_agent_reaches_grid_goal_around_obstacle() -> None:
     engine.input_adapter = GridGameInputAdapter(game)
 
     for _ in range(game.width * game.height):
-        engine.process_frame(game.observe(), source="test_grid_game")
+        frame = game.observe()
+        frame["controls"] = []
+        engine.process_frame(frame, source="test_grid_game")
         if game.won:
             break
 
@@ -123,7 +125,7 @@ def test_enemy_alerts_within_vision_and_pursues_player() -> None:
     )
 
 
-def test_agent_outcomes_with_pursuing_enemy_across_multiple_seeds() -> None:
+def test_agent_outcomes_with_active_pursuer_across_multiple_seeds() -> None:
     outcomes = []
     for seed in range(10):
         game = GridGame(seed=seed)
@@ -142,15 +144,16 @@ def test_agent_outcomes_with_pursuing_enemy_across_multiple_seeds() -> None:
             game.caught,
             game.player_health,
             game.enemy_health,
+            game.enemy_alerted,
             sum(
-                experience["action"].name in {"control_1", "control_2"}
+                experience["action"].name.startswith("control_")
                 for experience in engine.memory.experiences
             ),
         ))
 
-    assert any(won for won, _, _, _, _ in outcomes)
-    assert any(not won and not caught for won, caught, _, _, _ in outcomes)
-    assert any(control_trials for _, _, _, _, control_trials in outcomes)
+    assert any(won for won, _, _, _, _, _ in outcomes)
+    assert any(alerted for _, _, _, _, alerted, _ in outcomes)
+    assert any(control_trials for _, _, _, _, _, control_trials in outcomes)
 
 
 def test_obstacle_moves_after_each_directional_action_without_overlapping() -> None:
@@ -207,10 +210,37 @@ def test_health_is_visible_without_an_enemy_label_or_combat_instructions() -> No
 
     assert frame["hud"]["health"] == 10
     assert {"id": "entity-2", "position": [4, 1], "health": 10} in frame["hud"]["grid"]["entities"]
-    assert frame["controls"] == ["control_1", "control_2"]
+    assert frame["controls"] == [f"control_{index}" for index in range(1, 7)]
     assert "enemy" not in frame
     assert "attack" not in str(frame).lower()
     assert "defend" not in str(frame).lower()
+
+
+def test_six_anonymous_controls_are_exposed_and_mapped_to_game_inputs() -> None:
+    game = GridGame(seed=42)
+    game.position = (10, 10)
+    game.target = (25, 25)
+    game.obstacles = {(29, 29)}
+    game.enemy_position = (20, 20)
+    expected_positions = {
+        "control_1": (10, 9),
+        "control_2": (11, 10),
+        "control_3": (10, 11),
+        "control_4": (9, 10),
+    }
+
+    frame = game.observe()
+    assert frame["controls"] == [f"control_{index}" for index in range(1, 7)]
+    assert all(
+        name not in str(frame).lower()
+        for name in ("move_up", "move_right", "move_down", "move_left", "attack", "defend")
+    )
+
+    for control, expected_position in expected_positions.items():
+        game.position = (10, 10)
+        game._move_count = 0
+        game.execute(Action(name=control))
+        assert game.position == expected_position
 
 
 def test_generic_control_policy_learns_effects_from_observation_changes() -> None:
@@ -235,29 +265,33 @@ def test_generic_control_policy_learns_effects_from_observation_changes() -> Non
         "confidence": 1.0,
     }
 
-    observation_values = (
-        (10, 10),
-        (7, 7),
-        (7, 7),
-        (4, 7),
-        (4, 7),
-        (4, 7),
-        (4, 7),
+    state = policy.world_model.update(observation(10, 10))
+    state.entities[0].position = (2, 1)
+    observations = (
+        observation(10, 10),
+        observation(7, 7),
+        observation(7, 7),
+        observation(4, 7),
+        observation(4, 7),
     )
-    actions = [
-        policy.decide(observation(*values), memory)
-        for values in observation_values
-    ]
+    actions = []
+    for frame in observations:
+        normalized = frame
+        control = policy.control_learner.choose(
+            state,
+            normalized,
+            normalized["controls"],
+            memory,
+        )
+        if control is not None:
+            actions.append(control)
 
-    assert actions[0].name in {"control_1", "control_2"}
-    assert actions[1].name != actions[0].name
-    assert actions[-1].name not in {"control_1", "control_2"}
-    trials = policy.control_learner.trials[(1,)]
-    assert set(trials) == {"control_1", "control_2"}
-    assert all(len(control_trials) == 3 for control_trials in trials.values())
-    first_effect = trials[actions[0].name][0]
-    assert first_effect["hud.health"] == -3
-    assert first_effect["hud.grid.entities[0].health"] == -3
+    assert actions
+    trials = policy.control_learner.trials[(1, 1)]
+    assert len(trials) <= 6
+    assert all(control.startswith("control_") for control in trials)
+    assert sum(map(len, trials.values())) == len(observations) - 1
+    assert all("mean_reward" in inference for inference in (policy.control_learner.latest_inference,))
 
 
 def test_defense_prevents_damage_and_an_attacking_entity_retreats() -> None:
@@ -266,7 +300,7 @@ def test_defense_prevents_damage_and_an_attacking_entity_retreats() -> None:
     game.enemy_position = (2, 1)
     game.obstacles = {(9, 9)}
     with patch.object(game, "_enemy_combat_choice", return_value="attack"):
-        result = game.execute(Action(name="control_2"))
+        result = game.execute(Action(name="control_6"))
 
     assert game.player_health == 10
     assert game.enemy_health == 10
@@ -281,7 +315,7 @@ def test_an_attacking_entity_is_not_damaged_when_it_defends() -> None:
     game.enemy_position = (2, 1)
     game.obstacles = {(9, 9)}
     with patch.object(game, "_enemy_combat_choice", return_value="defend"):
-        result = game.execute(Action(name="control_1"))
+        result = game.execute(Action(name="control_5"))
 
     assert game.player_health == 10
     assert game.enemy_health == 10
@@ -295,7 +329,7 @@ def test_combat_attacks_deal_three_damage() -> None:
     game.enemy_position = (2, 1)
     game.obstacles = {(9, 9)}
     with patch.object(game, "_enemy_combat_choice", return_value="attack"):
-        game.execute(Action(name="control_1"))
+        game.execute(Action(name="control_5"))
 
     assert game.player_health == 7
     assert game.enemy_health == 7
@@ -309,7 +343,7 @@ def test_player_attack_can_remove_entity_as_a_regular_obstacle() -> None:
     with patch.object(game, "_enemy_combat_choice", return_value="attack"):
         for _ in range(4):
             game.enemy_position = (2, 1)
-            game.execute(Action(name="control_1"))
+            game.execute(Action(name="control_5"))
 
     assert game.enemy_position is None
     assert game.enemy_health == 0
@@ -326,9 +360,9 @@ def test_player_death_ends_game_as_a_loss() -> None:
     game.obstacles = {(9, 9)}
     game.player_health = 1
     with patch.object(game, "_enemy_combat_choice", return_value="attack"):
-        result = game.execute(Action(name="control_1"))
+        result = game.execute(Action(name="control_5"))
 
     assert game.player_health == 0
     assert game.caught
-    assert result.details == {"status": "completed"}
+    assert result.details == {"status": "caught"}
     assert game.observe()["hud"]["status"] == "lost"

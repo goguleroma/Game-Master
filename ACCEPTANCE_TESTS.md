@@ -91,8 +91,11 @@ Definire i test minimamente necessari per verificare che il sistema stia effetti
 - il nemico è esposto al planner usando il campo ostacoli esistente, senza un campo dedicato;
 - giocatore ed entità partono da 10 PV; ogni attacco infligge 3 PV e la difesa annulla il danno;
 - l'osservazione espone i PV senza etichette o istruzioni di combattimento;
-- l'osservazione espone due controlli opachi senza la loro corrispondenza semantica;
-- l'agente seleziona controlli opachi in base all'incertezza e aggiorna profili medi confrontando osservazioni prima/dopo, senza leggere esiti semanticamente etichettati;
+- l'osservazione espone i sei controlli opachi senza la loro corrispondenza semantica;
+- il planner indica un passo verso obiettivo/frontiera e il learner, dopo aver osservato gli effetti, seleziona il controllo anonimo che realizza lo spostamento desiderato;
+- l'agente aggiorna il valore atteso dei controlli usando progresso verso l'obiettivo, variazioni del proprio stato e risultato terminale, mantenendo i controlli anonimi;
+- la selezione esplora ancora alternative incerte, ma interrompe le prove in un contesto quando tutti i controlli hanno prodotto solo osservazioni invariate;
+- gli esiti appresi sono persistiti per gioco e possono influire sulle scelte delle partite successive;
 - un'entità a 0 PV diventa un ostacolo statico; il giocatore a 0 PV perde la partita;
 - le esperienze del ciclo sono registrate in memoria.
 

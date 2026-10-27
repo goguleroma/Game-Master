@@ -11,4 +11,5 @@ venv/
 .pytest_cache/
 .coverage
 htmlcov/
+.gm-memory.sqlite3
 .DS_Store

@@ -18,8 +18,6 @@ class ActionManager:
             "move_right": ActionSpec(name="move_right", params={"steps": 1}),
             "move_down": ActionSpec(name="move_down", params={"steps": 1}),
             "explore_frontier": ActionSpec(name="explore_frontier", params={"frontier": (0, 0)}),
-            "control_1": ActionSpec(name="control_1"),
-            "control_2": ActionSpec(name="control_2"),
         }
 
     def get_action(self, name: str, **kwargs) -> ActionSpec:
@@ -30,3 +28,13 @@ class ActionManager:
         action = ActionSpec(name=spec.name, params=dict(spec.params))
         action.params.update(kwargs)
         return action
+
+    @staticmethod
+    def get_control_action(name: str, available_controls: object) -> ActionSpec:
+        if (
+            not isinstance(available_controls, list)
+            or not isinstance(name, str)
+            or name not in available_controls
+        ):
+            raise ValueError(f"Unavailable control: {name}")
+        return ActionSpec(name=name)

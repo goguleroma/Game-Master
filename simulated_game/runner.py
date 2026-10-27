@@ -1,12 +1,19 @@
 import sys
+from pathlib import Path
 
 from core.engine import GameEngine
+from core.memory import MemoryStore
 from simulated_game.game import GridGame, GridGameInputAdapter
 
 
 def run_game(max_steps: int = 200, seed: int | None = None) -> bool:
     game = GridGame(seed=seed)
-    engine = GameEngine()
+    engine = GameEngine(
+        memory=MemoryStore(
+            game_id="grid_30x30_v1",
+            database_path=Path(".gm-memory.sqlite3"),
+        )
+    )
     engine.input_adapter = GridGameInputAdapter(game)
 
     print(

@@ -9,13 +9,13 @@ from control.input_adapter import InputAdapter
 
 
 class GameEngine:
-    def __init__(self) -> None:
+    def __init__(self, memory: MemoryStore | None = None) -> None:
         self.capture = ScreenCapture()
         self.state_extractor = StateExtractor()
         self.planner = Planner()
         self.exploration_policy = ExplorationPolicy()
         self.input_adapter = InputAdapter()
-        self.memory = MemoryStore()
+        self.memory = memory if memory is not None else MemoryStore()
         self.logger = Logger()
 
     def run(self) -> None:
@@ -38,6 +38,7 @@ class GameEngine:
         self.logger.info(f"Observation received: {frame}")
 
         state = self.state_extractor.extract(observation)
+        self.memory.observe_frame(state)
         self.logger.info(
             f"Extracted state: objects={state.objects}, hud={state.hud}, "
             f"goal={state.goal}, confidence={state.confidence}"
@@ -68,6 +69,7 @@ class GameEngine:
             f"Planner decision (rule-based): {action.name}, params={action.params}"
         )
         result = self.input_adapter.execute(action)
+        self.exploration_policy.observe_action_result(result.details, self.memory)
         self.memory.record({
             "state": state,
             "action": action,

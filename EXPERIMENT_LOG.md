@@ -127,6 +127,64 @@ Documentare gli esperimenti, i risultati e le conclusioni in modo replicabile.
 - Test: feedback che modifica la selezione; mitigazione danno; arretramento; morte del giocatore; rimozione dell'entità e conversione in ostacolo.
 - Limiti: l'agente sceglie in base all'incertezza, ma non deduce concetti semantici come “attacco”, “difesa” o “minaccia”; conserva associazioni fra controllo, contesto e variazioni osservabili. Non ha un modello dell'avversario né pianifica per sconfiggerlo. Quattro seed non sono conclusi entro 200 azioni e uno ha perso, con eliminazione simultanea dell'entità. L'esperimento dimostra apprendimento contestuale elementare, non scoperta autonoma dell'algoritmo o generalizzazione.
 
+### Esperimento 14 - Effetto della memoria persistente tra partite
+
+- Data: 2026-10-27
+- Obiettivo: misurare se la memoria persistente cambia la prestazione, non soltanto il numero di prove ripetute.
+- Metrica primaria: tasso di vittoria entro 200 turni. Metriche secondarie: sconfitte, timeout, turni medi, azioni dedicate ai controlli e risultati appaiati per seed.
+- Metodo: confronto sugli stessi 40 seed (0–39), massimo 200 turni per partita, danno 3 PV. La baseline riparte senza prove a ogni episodio; la condizione persistente usa un database SQLite temporaneo condiviso, inizialmente vuoto. Ogni condizione parte dallo stesso insieme di seed; il database di benchmark è eliminato a fine test.
+- Baseline volatile: 25/40 vittorie (62,5%; IC Wilson 95% 47,0–75,8%), 5 sconfitte e 10 timeout; media 123,2 turni e 39,95 azioni di controllo per partita.
+- Memoria persistente: 22/40 vittorie (55,0%; IC Wilson 95% 39,8–69,3%), 1 sconfitta e 17 timeout; media 127,2 turni e 2,58 azioni di controllo per partita.
+- Confronto appaiato: la memoria ha trasformato 4 esiti non-vittoria in vittorie, ma ha anche trasformato 7 vittorie della baseline in non-vittorie; 18 seed sono vittorie in entrambe le condizioni. La differenza del tasso di vittoria è −7,5 punti percentuali con memoria persistente.
+- Conclusione: la memoria riduce drasticamente le prove di controllo e le sconfitte, ma aumenta i timeout e non migliora il tasso di vittoria in questa prova. Gli intervalli di confidenza sono ampi e sovrapposti; 40 seed non bastano a dimostrare una differenza statisticamente affidabile. La metrica primaria da mantenere per i prossimi confronti è il tasso di vittoria entro 200 turni, affiancato dai timeout e dal numero di prove per verificare il costo dell'apprendimento.
+- Interpretazione tecnica: il learner riutilizza le associazioni e smette di esplorare i controlli quando raggiunge la soglia, ma non sceglie in base agli effetti favorevoli né sa se il controllo appreso è utile per il successo. Meno esperimenti non equivale a migliore adattamento; la maggiore quota di timeout è compatibile con un apprendimento prematuro che riduce l'esplorazione senza migliorare la decisione.
+- Limiti: i seed sono eseguiti in ordine crescente e la memoria è cumulativa, perciò l'esito dipende dall'ordine; occorrono repliche con ordini diversi e una metrica di avanzamento verso l'obiettivo per distinguere lo stallo dal timeout vicino al traguardo.
+
+### Esperimento 15 - Selezione dei controlli guidata dagli esiti
+
+- Data: 2026-10-27
+- Obiettivo: fare in modo che le informazioni memorizzate influenzino la selezione delle azioni e limitare prove ripetute senza effetto.
+- Modifica: sostituita la soglia di arresto dopo un numero fisso di prove con un selettore UCB contestuale che confronta l'utilità osservata; l'utilità usa variazione del progresso verso l'obiettivo, variazione dello stato del giocatore e stato terminale. Le prove senza variazioni osservabili portano all'astensione dopo tre tentativi per controllo. Gli esiti vengono salvati in SQLite per gioco.
+- Metodo: stessi seed 0–39, massimo 200 turni, danno 3 PV; confronto tra memoria volatile e database persistente pulito condiviso tra seed.
+- Risultati: entrambe le condizioni hanno prodotto 27/40 vittorie (67,5%), 0 sconfitte e 13 timeout; media turni 117,2 con memoria volatile e 116,7 con memoria persistente; media azioni di controllo 17,5 e 17,2 rispettivamente. Nessuno dei 40 esiti per seed è cambiato con la memoria persistente.
+- Confronto storico: rispetto alla policy precedente testata sugli stessi 40 seed (25 vittorie, 5 sconfitte, 10 timeout in modalità volatile), la nuova policy ha avuto 2 vittorie in più e nessuna sconfitta, ma 3 timeout aggiuntivi. È un confronto deterministico sullo stesso insieme di seed, non una dimostrazione di miglioramento generalizzabile.
+- Conclusione: la nuova policy usa un segnale di utilità per valutare i controlli e smette di ripetere test inerti; la persistenza non ha però modificato gli esiti in questo test. Il learner non impara ancora piani composti né modifica il planner BFS, che continua a decidere i movimenti.
+- Limiti e prossimi criteri: l'utilità non assegna ancora credito a conseguenze ritardate come l'eliminazione di un'entità; l'esplorazione/UCB e l'astensione per prove inerti sono euristiche implementate nel codice, non algoritmi inventati dall'agente. Misurare il progresso verso il traguardo e ripetere gli esperimenti con più ordini di seed prima di attribuire causalità.
+
+### Esperimento 16 - Apprendimento più generale dagli effetti osservati
+
+- Data: 2026-10-27
+- Obiettivo: togliere la dipendenza dal controllo codificato e dal contesto a distanza fissa, e usare le informazioni strutturate disponibili per valutare le azioni.
+- Modifiche: il learner accetta i controlli effettivamente esposti dall'osservazione e l'ActionManager li inoltra senza richiedere registrazione individuale; confronta valori numerici, booleani, stringhe, nullità e variazioni strutturali presenti in osservazioni arbitrarie. Stima il progresso quando il World Model fornisce posizione e obiettivo, altrimenti si basa solo su esiti terminali espliciti. Le azioni e gli esiti restano contestuali e persistibili per gioco. Il movimento continua a essere deciso dal planner BFS.
+- Metrica primaria: vittorie entro 200 turni. Metriche secondarie: sconfitte, timeout e media delle azioni di controllo.
+- Risultati su seed 0–39 in ordine crescente, DB pulito: memoria volatile 17 vittorie, 19 sconfitte e 4 timeout; memoria persistente 25 vittorie, 4 sconfitte e 11 timeout. Le azioni di controllo medie sono 33,9 e 17,1 rispettivamente. La memoria ha cambiato l'esito su 15 seed.
+- Replicazione della condizione persistente con seed in ordine decrescente e DB indipendente pulito: 27 vittorie, 4 sconfitte, 9 timeout; media 17,1 azioni di controllo. La differenza fra gli ordini mostra che l'apprendimento cumulativo è dipendente dalla sequenza delle esperienze.
+- Conclusione: in queste prove la memoria persistente ha migliorato il tasso di vittoria rispetto alla memoria volatile e ridotto le sconfitte, pagando con più timeout. È un segnale promettente, non conclusivo: la baseline volatile ha un'elevata variabilità e la singola sequenza non separa l'effetto dell'ordine da quello della conoscenza.
+- Limiti: l'attribuzione di cambiamenti all'ultima azione è correlazionale; non gestisce ancora credito ritardato in modo esplicito, non sceglie strategie di movimento e non misura ogni possibile aspetto del gioco. “Tutte le variabili” indica qui tutti i valori primitivi/strutturali ricevuti nell'osservazione, non informazioni non osservate o non estraibili. Il criterio di progresso disponibile è ancora spaziale; in ambienti senza target strutturato, servono segnali terminali espliciti.
+
+### Esperimento 17 - Sei controlli anonimi e sequenze appaiate
+
+- Data: 2026-10-27
+- Obiettivo: verificare il gioco in cui GM riceve controlli anonimi invece di nomi espliciti di movimento e combattimento, e misurare l'effetto della memoria tra partite.
+- Interfaccia: l'osservazione espone `control_1`–`control_6`; la mappatura interna del simulatore non viene trasmessa a GM. Il learner tratta i sei input come controlli opachi.
+- Metodo: tre ordini casuali e riproducibili dei seed 0–39; per ogni ordine, stessi seed nella condizione volatile e nella condizione persistente. Massimo 200 turni per partita; database persistente temporaneo e indipendente per ciascuna sequenza.
+- Risultati: memoria volatile, in tutte e tre le sequenze, 5 vittorie, 17 sconfitte e 18 timeout su 40; media 146,7 turni. Memoria persistente: sequenza 1, 4 vittorie/4 sconfitte/32 timeout, 182,2 turni medi; sequenza 2, 3/5/32, 182,1 turni medi; sequenza 3, 4/4/32, 175,4 turni medi. Il risultato è cambiato rispetto alla condizione volatile su 25, 25 e 22 seed rispettivamente.
+- Verifiche: `python -m pytest -q` (38 test superati); `git diff --check` senza errori.
+- Conclusione: i controlli anonimi sono integrati, ma la persistenza non migliora i risultati in queste sequenze: porta a molte meno sconfitte, ma anche a molte meno vittorie e più timeout. L'esito dipende dall'ordine di apprendimento; non si può concludere che la memoria migliori la prestazione. La baseline volatile è identica nelle tre sequenze perché riparte senza conoscenze pregresse e il comportamento è deterministico.
+- Limiti e prossimi criteri: il test misura la policy corrente, che può scegliere direttamente tra input opachi, non la capacità di pianificare movimenti composti. I dati non dimostrano che il learner abbia dedotto il significato dei controlli; associazioni tra input e cambiamenti osservati possono essere confondenti. Prima di ampliare il benchmark, occorre migliorare l'uso degli effetti appresi per orientare l'azione verso obiettivi e distinguere progresso, stallo e semplice sopravvivenza.
+
+### Esperimento 18 - Pianificazione direzionale tramite effetti appresi
+
+- Data: 2026-10-27
+- Obiettivo: fare usare al learner gli effetti osservati per realizzare la direzione scelta dal planner, senza fornire la corrispondenza tra nome anonimo e semantica dell'input.
+- Modifica: il planner continua a scegliere il passo BFS verso l'obiettivo visibile o una frontiera; il learner confronta la posizione dell'agente prima/dopo ogni controllo e associa al controllo lo spostamento osservato. Se conosce un controllo che produce spostamento nella direzione desiderata lo seleziona; altrimenti prova controlli non mappati o controlli senza effetto provati da posizioni diverse. Quattro origini distinte senza spostamento sono considerate evidenza di un controllo non locomotivo. Le stime sono persistite nelle prove del gioco e non sono etichette semantiche.
+- Test: test mirati sulla scoperta della direzione, sul riuso del controllo corrispondente e sul non ripetere all'infinito un input senza spostamento; suite completa: 40 test superati.
+- Metodo: tre ordini casuali riproducibili degli stessi seed 0–39; confronto appaiato tra memoria volatile e database persistente pulito e indipendente per sequenza; limite 200 turni.
+- Risultati volatile: in tutte le sequenze 25 vittorie, 0 sconfitte e 15 timeout su 40; media 132,2 turni/azioni di controllo.
+- Risultati persistenti: sequenza 1, 22 vittorie/0 sconfitte/18 timeout, media 127,8 turni e 124,0 azioni di controllo; sequenza 2, 21/0/19, media 126,6 turni e 122,7 azioni; sequenza 3, 22/0/18, media 126,2 turni e 122,4 azioni. Gli esiti sono cambiati su 19, 18 e 19 seed rispetto alla modalità volatile.
+- Conclusione: il learner ora collega una direzione di piano a controlli anonimi osservandone l'effetto sullo stato, e la persistenza riduce di circa 8–10 il numero medio di azioni di controllo. Tuttavia, in questo benchmark non aumenta le vittorie: ne produce 21–22 contro 25 in modalità volatile, con più timeout. È un progresso architetturale, non una dimostrazione di miglioramento del tasso di successo.
+- Limiti e prossimi criteri: la politica di esplorazione delle frontiere e il bersaglio che cambia frequentemente limitano il completamento. L'euristica delle quattro posizioni per classificare un controllo senza movimento può confondere un input bloccato da ostacoli con un input non locomotivo; le stime restano specifiche del gioco. Il prossimo miglioramento deve distinguere blocco locale da effetto stabile e verificare il progresso sul bersaglio dinamico, mantenendo il confronto appaiato.
+
 ## Registro da aggiornare
 
 Per ogni nuovo esperimento, aggiungere:

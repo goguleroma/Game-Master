@@ -6,6 +6,15 @@ from core.types import Action, ActionResult
 
 
 class GridGame:
+    _CONTROL_BINDINGS = {
+        "control_1": ("move", (0, -1)),
+        "control_2": ("move", (1, 0)),
+        "control_3": ("move", (0, 1)),
+        "control_4": ("move", (-1, 0)),
+        "control_5": ("attack", None),
+        "control_6": ("defend", None),
+    }
+
     def __init__(self, seed: int | None = None) -> None:
         self.width = 30
         self.height = 30
@@ -65,7 +74,7 @@ class GridGame:
 
         return {
             "objects": objects,
-            "controls": ["control_1", "control_2"],
+            "controls": list(self._CONTROL_BINDINGS),
             "hud": {
                 "status": (
                     "won" if self.won else "lost" if self.caught else "playing"
@@ -103,8 +112,13 @@ class GridGame:
                 details={"status": "game_over", "position": list(self.position)},
             )
 
-        if action.name in {"control_1", "control_2"}:
-            return self._execute_unknown_input(action.name)
+        if action.name in self._CONTROL_BINDINGS:
+            kind, value = self._CONTROL_BINDINGS[action.name]
+            if kind == "move":
+                if not isinstance(value, tuple):
+                    raise RuntimeError("Movement control is missing its direction.")
+                return self._execute_move(value)
+            return self._execute_combat(kind)
         if action.name == "wait":
             return ActionResult(
                 success=False,
@@ -127,6 +141,9 @@ class GridGame:
                 details={"status": "unsupported_action", "action": action.name},
             )
 
+        return self._execute_move(direction)
+
+    def _execute_move(self, direction: tuple[int, int]) -> ActionResult:
         previous_position = self.position
         next_position = (
             self.position[0] + direction[0],
@@ -169,7 +186,7 @@ class GridGame:
             },
         )
 
-    def _execute_unknown_input(self, input_name: str) -> ActionResult:
+    def _execute_combat(self, player_action: str) -> ActionResult:
         if self.enemy_position is None or self._distance(self.position, self.enemy_position) != 1:
             return ActionResult(
                 success=True,
@@ -178,7 +195,6 @@ class GridGame:
                 },
             )
 
-        player_action = "attack" if input_name == "control_1" else "defend"
         enemy_action = self._enemy_combat_choice()
 
         if player_action == "attack" and enemy_action != "defend":
@@ -201,7 +217,7 @@ class GridGame:
         return ActionResult(
             success=True,
             details={
-                "status": "completed",
+                "status": "caught" if self.caught else "completed",
             },
         )
 

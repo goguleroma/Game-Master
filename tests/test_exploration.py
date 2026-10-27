@@ -1,4 +1,7 @@
+from types import SimpleNamespace
+
 from core.memory import MemoryStore
+from decision.control_learner import ControlLearner
 from decision.exploration_policy import ExplorationPolicy
 
 
@@ -70,3 +73,193 @@ def test_behavior_hypothesis_is_cleared_when_new_evidence_disagrees() -> None:
 
     assert entity.behavior_hypothesis is None
     assert entity.behavior_confidence == 0.0
+
+
+def test_short_term_memory_is_bounded_by_frames_and_age() -> None:
+    from core.memory import ShortTermMemory
+
+    memory = ShortTermMemory(max_frames=3, max_age_seconds=2)
+    memory.add("frame-1", timestamp=0)
+    memory.add("frame-2", timestamp=1)
+    memory.add("frame-3", timestamp=2)
+    memory.add("frame-4", timestamp=3)
+
+    assert [frame for _, frame in memory.frames] == ["frame-2", "frame-3", "frame-4"]
+
+    memory.add("frame-5", timestamp=5.1)
+
+    assert [frame for _, frame in memory.frames] == ["frame-5"]
+
+
+def test_game_control_learning_persists_per_game(tmp_path) -> None:
+    database_path = tmp_path / "memory.sqlite3"
+    memory = MemoryStore(game_id="grid-game", database_path=database_path)
+    learner = ControlLearner()
+    state = SimpleNamespace(
+        current_position=(1, 1),
+        target_position=(100, 1),
+        grid_size=(200, 3),
+        entities=[
+            SimpleNamespace(
+                entity_id="entity-1",
+                position=(2, 1),
+                metadata={},
+            )
+        ],
+    )
+    health = 10
+    for _ in range(80):
+        chosen = learner.choose(
+            state,
+            {"hud": {"health": health}},
+            ["control_1", "control_2"],
+            memory,
+        )
+        if chosen == "control_2":
+            state.current_position = (state.current_position[0] + 1, 1)
+            health += 1
+        else:
+            state.current_position = (state.current_position[0] - 1, 1)
+            health -= 1
+        state.entities[0].position = (state.current_position[0] + 1, 1)
+    learner.choose(
+        state,
+        {"hud": {"health": health}},
+        ["control_1", "control_2"],
+        memory,
+    )
+
+    restored_learner = ControlLearner()
+    assert restored_learner.choose(
+        state,
+        {"hud": {"health": health}},
+        ["control_1", "control_2"],
+        MemoryStore(game_id="grid-game", database_path=database_path),
+    ) == "control_2"
+
+    other_game_learner = ControlLearner()
+    assert other_game_learner.choose(
+        state,
+        {"hud": {"health": health}},
+        ["control_1", "control_2"],
+        MemoryStore(game_id="another-game", database_path=database_path),
+    ) in {"control_1", "control_2"}
+
+
+def test_learner_stops_repeating_controls_with_no_observed_effects() -> None:
+    learner = ControlLearner()
+    state = SimpleNamespace(
+        current_position=(1, 1),
+        entities=[
+            SimpleNamespace(
+                entity_id="entity-1",
+                position=(2, 1),
+                metadata={},
+            )
+        ],
+    )
+    observation = {"hud": {"health": 10}}
+    choices = []
+    for _ in range(10):
+        choice = learner.choose(
+            state,
+            observation,
+            ["control_1", "control_2"],
+        )
+        if choice is None:
+            break
+        choices.append(choice)
+
+    assert len(choices) == 6
+    assert set(choices) == {"control_1", "control_2"}
+
+
+def test_learner_discovers_control_effects_and_selects_toward_requested_direction() -> None:
+    learner = ControlLearner()
+    state = SimpleNamespace(current_position=(0, 0), entities=[])
+    controls = ["opaque_a", "opaque_b"]
+
+    first = learner.choose(
+        state,
+        {"position": list(state.current_position)},
+        controls,
+        desired_direction=(1, 0),
+    )
+    assert first is not None
+    state.current_position = (-1, 0)
+    second = learner.choose(
+        state,
+        {"position": list(state.current_position)},
+        controls,
+        desired_direction=(1, 0),
+    )
+    assert second is not None and second != first
+    state.current_position = (0, 0)
+    third = learner.choose(
+        state,
+        {"position": list(state.current_position)},
+        controls,
+        desired_direction=(1, 0),
+    )
+
+    assert third == second
+    assert learner.latest_inference is not None
+    assert learner.latest_inference["mean_effects"]["__agent_dx"] == 1.0
+
+
+def test_learner_does_not_repeat_stationary_controls_when_direction_is_unknown() -> None:
+    learner = ControlLearner()
+    stationary_samples = [
+        {
+            "__agent_dx": 0.0,
+            "__agent_dy": 0.0,
+            "__agent_x": float(x),
+            "__agent_y": 0.0,
+        }
+        for x in range(4)
+    ]
+    blocked_samples = stationary_samples[:2]
+    learner.trials = {
+        (): {
+            "move_up": [{
+                "__agent_dx": 0.0,
+                "__agent_dy": -1.0,
+                "__agent_x": 0.0,
+                "__agent_y": 0.0,
+            }],
+            "move_right": [{
+                "__agent_dx": 1.0,
+                "__agent_dy": 0.0,
+                "__agent_x": 0.0,
+                "__agent_y": 0.0,
+            }],
+            "move_down": [{
+                "__agent_dx": 0.0,
+                "__agent_dy": 1.0,
+                "__agent_x": 0.0,
+                "__agent_y": 0.0,
+            }],
+            "blocked_left": blocked_samples,
+            "stationary": stationary_samples,
+        }
+    }
+
+    choice = learner.choose(
+        SimpleNamespace(current_position=(3, 0), entities=[]),
+        {},
+        ["move_up", "move_right", "move_down", "blocked_left", "stationary"],
+        desired_direction=(-1, 0),
+    )
+
+    assert choice == "blocked_left"
+
+
+def test_policy_can_execute_controls_not_hardcoded_in_action_registry() -> None:
+    policy = ExplorationPolicy()
+    action = policy.decide(
+        {"controls": ["unfamiliar_control"], "confidence": 0.5},
+        MemoryStore(),
+    )
+
+    assert action is not None
+    assert action.name == "unfamiliar_control"

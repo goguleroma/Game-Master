@@ -1,7 +1,30 @@
 from dataclasses import dataclass, field
+from collections import deque
+import json
+import sqlite3
+import time
+from contextlib import closing
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 Position = Tuple[int, int]
+
+
+class ShortTermMemory:
+    def __init__(
+        self,
+        max_frames: int = 60,
+        max_age_seconds: float = 12.0,
+    ) -> None:
+        self.max_frames = max_frames
+        self.max_age_seconds = max_age_seconds
+        self.frames: deque[tuple[float, object]] = deque(maxlen=max_frames)
+
+    def add(self, frame: object, timestamp: Optional[float] = None) -> None:
+        now = time.monotonic() if timestamp is None else timestamp
+        self.frames.append((now, frame))
+        while self.frames and now - self.frames[0][0] > self.max_age_seconds:
+            self.frames.popleft()
 
 
 @dataclass
@@ -58,16 +81,138 @@ class EntityMemory:
 
 
 class MemoryStore:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        game_id: Optional[str] = None,
+        database_path: Optional[str | Path] = None,
+    ) -> None:
+        self.short_term = ShortTermMemory()
         self.working = WorkingMemory()
         self.spatial = SpatialMemory()
         self.knowledge: List[KnowledgeItem] = []
+        self.general_knowledge: List[KnowledgeItem] = []
         self.experiences: List[Dict[str, Any]] = []
         self.entities: Dict[str, EntityMemory] = {}
+        self.game_id = game_id
+        self.database_path = Path(database_path) if database_path is not None else None
+        if self.database_path is not None:
+            self.database_path.parent.mkdir(parents=True, exist_ok=True)
+            with closing(self._connect()) as connection:
+                connection.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS game_control_trials (
+                        game_id TEXT NOT NULL,
+                        context TEXT NOT NULL,
+                        control TEXT NOT NULL,
+                        effects TEXT NOT NULL
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS game_control_outcomes (
+                        game_id TEXT NOT NULL,
+                        context TEXT NOT NULL,
+                        control TEXT NOT NULL,
+                        reward REAL NOT NULL
+                    )
+                    """
+                )
+                connection.commit()
 
     @property
     def records(self) -> List[Dict[str, Any]]:
         return self.experiences
+
+    def observe_frame(self, frame: object) -> None:
+        self.short_term.add(frame)
+
+    def load_control_trials(
+        self,
+    ) -> dict[tuple[int, ...], dict[str, list[dict[str, float]]]]:
+        if self.database_path is None or self.game_id is None:
+            return {}
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                """
+                SELECT context, control, effects
+                FROM game_control_trials
+                WHERE game_id = ?
+                """,
+                (self.game_id,),
+            ).fetchall()
+        trials: dict[tuple[int, ...], dict[str, list[dict[str, float]]]] = {}
+        for context_json, control, effects_json in rows:
+            context = tuple(json.loads(context_json))
+            effects = json.loads(effects_json)
+            trials.setdefault(context, {}).setdefault(control, []).append(effects)
+        return trials
+
+    def save_control_trial(
+        self,
+        context: tuple[int, ...],
+        control: str,
+        effects: dict[str, float],
+    ) -> None:
+        if self.database_path is None or self.game_id is None:
+            return
+        with closing(self._connect()) as connection:
+            connection.execute(
+                """
+                INSERT INTO game_control_trials (game_id, context, control, effects)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    self.game_id,
+                    json.dumps(context),
+                    control,
+                    json.dumps(effects, sort_keys=True),
+                ),
+            )
+            connection.commit()
+
+    def load_control_outcomes(
+        self,
+    ) -> dict[tuple[int, ...], dict[str, list[float]]]:
+        if self.database_path is None or self.game_id is None:
+            return {}
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                """
+                SELECT context, control, reward
+                FROM game_control_outcomes
+                WHERE game_id = ?
+                """,
+                (self.game_id,),
+            ).fetchall()
+        outcomes: dict[tuple[int, ...], dict[str, list[float]]] = {}
+        for context_json, control, reward in rows:
+            context = tuple(json.loads(context_json))
+            outcomes.setdefault(context, {}).setdefault(control, []).append(reward)
+        return outcomes
+
+    def save_control_outcome(
+        self,
+        context: tuple[int, ...],
+        control: str,
+        reward: float,
+    ) -> None:
+        if self.database_path is None or self.game_id is None:
+            return
+        with closing(self._connect()) as connection:
+            connection.execute(
+                """
+                INSERT INTO game_control_outcomes (game_id, context, control, reward)
+                VALUES (?, ?, ?, ?)
+                """,
+                (self.game_id, json.dumps(context), control, reward),
+            )
+            connection.commit()
+
+    def _connect(self) -> sqlite3.Connection:
+        if self.database_path is None:
+            raise RuntimeError("Persistent memory has no database path")
+        return sqlite3.connect(self.database_path)
 
     def update_working_memory(
         self,

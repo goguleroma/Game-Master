@@ -12,6 +12,9 @@ class ExplorationPolicy:
         self.action_manager = ActionManager()
         self.control_learner = ControlLearner()
 
+    def observe_action_result(self, details: dict[str, object], memory: MemoryStore) -> None:
+        self.control_learner.observe_action_result(details, memory)
+
     def decide(self, observation: object, memory: MemoryStore):
         if hasattr(observation, "hud"):
             normalized_observation = {
@@ -79,19 +82,33 @@ class ExplorationPolicy:
                 state.current_position,
             )
 
-        available_controls = normalized_observation.get("controls", [])
-        control = self.control_learner.choose(
-            state,
-            normalized_observation,
-            available_controls,
-            set(self.action_manager.action_registry),
-        )
-        if control is not None:
-            return self.action_manager.get_action(control)
-
-        # Preserve the original rule-based behavior for non-spatial scenarios.
         planner_state = state if state.grid_size is not None else observation
         action = self.planner.choose_action(planner_state, memory)
+        available_controls = normalized_observation.get("controls", [])
+        desired_direction = (
+            {
+                "move_up": (0, -1),
+                "move_right": (1, 0),
+                "move_down": (0, 1),
+                "move_left": (-1, 0),
+            }.get(action.name)
+            if action is not None
+            else None
+        )
+        control = None
+        if state.grid_size is None or desired_direction is not None:
+            control = self.control_learner.choose(
+                state,
+                normalized_observation,
+                available_controls,
+                memory,
+                desired_direction,
+            )
+        if control is not None:
+            return self.action_manager.get_control_action(
+                control,
+                available_controls,
+            )
 
         if action is None:
             return self.action_manager.get_action("wait")
