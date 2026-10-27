@@ -4,13 +4,13 @@ from core.engine import GameEngine
 from simulated_game.game import GridGame, GridGameInputAdapter
 
 
-def run_game(max_steps: int = 20) -> bool:
-    game = GridGame()
+def run_game(max_steps: int = 200, seed: int | None = None) -> bool:
+    game = GridGame(seed=seed)
     engine = GameEngine()
     engine.input_adapter = GridGameInputAdapter(game)
 
     print(
-        "Game-Master grid test (simulato, nessun input reale).",
+        f"Game-Master grid test (simulato, seed={seed}, nessun input reale).",
         file=sys.stderr,
         flush=True,
     )
@@ -18,7 +18,10 @@ def run_game(max_steps: int = 20) -> bool:
         frame = game.observe()
         print(
             f"\nStep {step}: posizione={game.position}, "
-            f"obiettivo={'visibile' if frame['hud']['grid']['target'] is not None else 'fuori visuale'}",
+            f"PV={game.player_health}, "
+            f"entita={game.enemy_health if game.enemy_position is not None else 'rimossa'}, "
+            f"obiettivo={'visibile' if frame['hud']['grid']['target'] is not None else 'fuori visuale'}, "
+            f"nemico={'inseguimento' if game.enemy_alerted else 'inattivo'}",
             file=sys.stderr,
             flush=True,
         )
@@ -32,9 +35,17 @@ def run_game(max_steps: int = 20) -> bool:
                 flush=True,
             )
             return True
+        if game.caught:
+            print(f"\nGM sconfitto dopo {step} turni.", file=sys.stderr, flush=True)
+            print(
+                f"Esperienze registrate: {len(engine.memory.records)}",
+                file=sys.stderr,
+                flush=True,
+            )
+            return False
         if result is not None and result.details.get("status") == "waiting_for_visible_target":
             print(
-                "\nGM non vede l'obiettivo e sceglie wait: non ha ancora una strategia di esplorazione.",
+                "\nGM non trova una mossa utile verso il traguardo o una frontiera esplorabile.",
                 file=sys.stderr,
                 flush=True,
             )
@@ -70,6 +81,8 @@ def render(game: GridGame) -> str:
                 row.append("P")
             elif position == game.target:
                 row.append("G")
+            elif position == game.enemy_position:
+                row.append("E")
             elif position in game.obstacles:
                 row.append("#")
             else:

@@ -87,6 +87,46 @@ Documentare gli esperimenti, i risultati e le conclusioni in modo replicabile.
 - Verifiche: test che controllano omissione delle coordinate nascoste e assenza di movimento con obiettivo fuori visuale.
 - Conclusione: la limitazione rivela che GM dipende da coordinate note e non possiede ancora esplorazione o memoria spaziale utile a cercare un obiettivo sconosciuto.
 
+### Esperimento 10 - Integrazione della memoria spaziale e dell'esplorazione
+
+- Data: 2026-10-27
+- Obiettivo: collegare `MemoryStore`, `WorldModel`, `ExplorationPolicy` e planner nel ciclo reale dell'engine.
+- Modifiche: normalizzazione dello stato osservato; aggiornamento delle celle visibili/visitate e degli ostacoli osservati; selezione delle frontiere raggiungibili; pattugliamento delle celle meno visitate dopo aver esplorato tutta la mappa.
+- Risultato: con obiettivo inizialmente nascosto, GM esplora senza riceverne le coordinate; su 10 seed fissi ha raggiunto l'obiettivo in tutti i casi, tra 6 e 44 turni.
+- Test: regressioni legacy, memoria spaziale, esplorazione con target nascosto, aggiornamento dinamico e completamento su 10 seed.
+- Limiti: esplorazione euristica deterministica, non apprendimento; griglia e osservazione restano strutturate/sintetiche; non prova generalizzazione né percezione visuale.
+
+### Esperimento 11 - Nemico inseguitore con informazione invariata
+
+- Data: 2026-10-27
+- Obiettivo: osservare la risposta di GM a un'entità attiva senza introdurre un campo semantico specifico per il nemico.
+- Regole ambiente: il nemico si attiva quando la distanza euclidea dal giocatore è entro 4 celle; dopo ogni mossa di GM, se attivo, insegue di una cella con un percorso BFS. La partita termina in caso di cattura.
+- Osservazione per GM: il nemico visibile è incluso nel campo già esistente `obstacles`, senza una label `enemy`; le posizioni fuori dal campo visivo di GM sono omesse.
+- Risultato su seed 0–9: 8 vittorie e 2 catture; il nemico si è attivato nella maggior parte delle partite. GM evita la posizione corrente come un ostacolo, ma non riconosce né anticipa l'inseguimento.
+- Verifiche: attivazione e avanzamento dell'inseguitore; visibilità senza nuovo campo; esiti sia positivi sia negativi su seed fissi.
+- Limiti: simulazione 2D deterministica a griglia; GM non ha un modello della dinamica del nemico.
+
+### Esperimento 12 - Categorizzazione comportamentale di entità anonime
+
+- Data: 2026-10-27
+- Obiettivo: assegnare categorie descrittive provvisorie usando osservazioni ripetute, senza etichette semantiche del gioco.
+- Dati: identificativo anonimo stabile e posizione corrente, limitati alla visuale già esistente.
+- Categorie inferibili: `unclassified`, `stationary`, `mobile`, `approaches_agent`, `moves_away_from_agent`.
+- Criterio: la categoria `stationary`/`mobile` deriva dai cambiamenti di posizione; le ipotesi direzionali richiedono almeno tre variazioni coerenti consecutive, restano distinte dalla categoria e hanno confidenza prudente.
+- Test: entità anonime ferme, in movimento e che riducono ripetutamente la distanza dall'agente; verifica che non venga assegnata subito un'etichetta semantica.
+- Limiti: è una classificazione euristica basata sul movimento, non apprendimento semantico; non deduce intenzione o pericolosità. Un'entità osservata per pochi turni resta `unclassified` o `mobile`; una dinamica casuale può produrre ipotesi temporanee.
+
+### Esperimento 13 - PV e scoperta per tentativi di input anonimi
+
+- Data: 2026-10-27
+- Regole dell'ambiente: giocatore ed entità hanno 10 PV; attacco infligge 3 PV, difesa annulla il danno; l'entità sceglie casualmente e arretra di una casella dopo aver attaccato. A 0 PV il giocatore perde; l'entità a 0 PV lascia un ostacolo statico.
+- Osservazione: GM riceve solo i PV propri e quelli dell'entità anonima, senza nomi o regole di combattimento.
+- Decisione sperimentale: l'osservazione elenca due controlli anonimi; un agente online seleziona i controlli meno provati per contesto spaziale e aggiorna il profilo medio dei cambiamenti numerici osservati. Non usa i dettagli dell'azione per conoscere l'esito e non riceve una ricompensa di combattimento.
+- Risultato dopo l'aumento del danno a 3 PV: seed 0–9, massimo 200 azioni, 6 vittorie (seed 0, 1, 2, 3, 7, 8), 1 sconfitta (seed 5) e 3 partite non concluse (seed 4, 6, 9). Nella sconfitta il giocatore e l'entità arrivano entrambi a 0 PV nello stesso turno; le partite non concluse terminano al limite con 1–7 PV per il giocatore e l'entità ancora presente. Il danno maggiore rende il rischio concreto, ma non aumenta le vittorie rispetto alla prova precedente.
+- Persistenza: ogni episodio del runner crea un nuovo `GameEngine`; il learner dei controlli e la memoria partono vuoti. Gli episodi su seed diversi sono quindi prove indipendenti, non apprendimento cumulativo tra partite.
+- Test: feedback che modifica la selezione; mitigazione danno; arretramento; morte del giocatore; rimozione dell'entità e conversione in ostacolo.
+- Limiti: l'agente sceglie in base all'incertezza, ma non deduce concetti semantici come “attacco”, “difesa” o “minaccia”; conserva associazioni fra controllo, contesto e variazioni osservabili. Non ha un modello dell'avversario né pianifica per sconfiggerlo. Quattro seed non sono conclusi entro 200 azioni e uno ha perso, con eliminazione simultanea dell'entità. L'esperimento dimostra apprendimento contestuale elementare, non scoperta autonoma dell'algoritmo o generalizzazione.
+
 ## Registro da aggiornare
 
 Per ogni nuovo esperimento, aggiungere:

@@ -23,6 +23,7 @@ class StateExtractor:
                 hud=hud,
                 goal=goal,
                 confidence=confidence,
+                controls=image.get("controls", []),
             )
 
         return GameState(

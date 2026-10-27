@@ -2,6 +2,7 @@ from core.memory import MemoryStore
 from core.logger import Logger
 from core.types import Action, ActionResult, GameState, Observation
 from decision.planner import Planner
+from decision.exploration_policy import ExplorationPolicy
 from perception.capture import ScreenCapture
 from perception.state_extractor import StateExtractor
 from control.input_adapter import InputAdapter
@@ -12,6 +13,7 @@ class GameEngine:
         self.capture = ScreenCapture()
         self.state_extractor = StateExtractor()
         self.planner = Planner()
+        self.exploration_policy = ExplorationPolicy()
         self.input_adapter = InputAdapter()
         self.memory = MemoryStore()
         self.logger = Logger()
@@ -41,7 +43,23 @@ class GameEngine:
             f"goal={state.goal}, confidence={state.confidence}"
         )
 
-        action = self.planner.choose_action(state)
+        action = self.exploration_policy.decide(state, self.memory)
+        inference = self.exploration_policy.control_learner.latest_inference
+        if inference is not None:
+            self.logger.info(f"Observed control effects: {inference}")
+            self.exploration_policy.control_learner.latest_inference = None
+        if self.memory.entities:
+            categories = {
+                entity_id: {
+                    "category": entity.category,
+                    "behavior_hypothesis": entity.behavior_hypothesis,
+                    "confidence": round(
+                        entity.behavior_confidence or entity.confidence, 2
+                    ),
+                }
+                for entity_id, entity in self.memory.entities.items()
+            }
+            self.logger.info(f"Observed entity hypotheses: {categories}")
         if action is None:
             self.logger.info("Planner selected no action.")
             return None
@@ -55,6 +73,12 @@ class GameEngine:
             "action": action,
             "result": result,
         })
+        self.memory.update_working_memory(
+            self.memory.working.current_observation,
+            action.name,
+            result.details.get("status"),
+            self.memory.working.last_position,
+        )
         self.logger.info(
             f"Action result: success={result.success}, details={result.details}"
         )

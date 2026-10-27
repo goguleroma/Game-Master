@@ -15,6 +15,7 @@ class GameState:
     hud: Dict[str, Any] = field(default_factory=dict)
     goal: str | None = None
     confidence: float = 0.0
+    controls: List[str] = field(default_factory=list)
 
 
 @dataclass

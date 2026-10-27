@@ -14,7 +14,12 @@ class ActionManager:
             "wait": ActionSpec(name="wait", params={"duration": 0.1}),
             "click": ActionSpec(name="click", params={"x": 0, "y": 0}),
             "move_left": ActionSpec(name="move_left", params={"steps": 1}),
+            "move_up": ActionSpec(name="move_up", params={"steps": 1}),
+            "move_right": ActionSpec(name="move_right", params={"steps": 1}),
+            "move_down": ActionSpec(name="move_down", params={"steps": 1}),
             "explore_frontier": ActionSpec(name="explore_frontier", params={"frontier": (0, 0)}),
+            "control_1": ActionSpec(name="control_1"),
+            "control_2": ActionSpec(name="control_2"),
         }
 
     def get_action(self, name: str, **kwargs) -> ActionSpec:

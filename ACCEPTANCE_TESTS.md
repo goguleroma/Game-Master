@@ -76,7 +76,10 @@ Definire i test minimamente necessari per verificare che il sistema stia effetti
 - l'obiettivo casuale è raggiungibile e distante almeno quattro mosse;
 - un seed riproduce la stessa posizione dell'obiettivo;
 - l'osservazione omette obiettivo e ostacoli oltre il raggio visivo;
-- se l'obiettivo è nascosto, il planner non riceve le sue coordinate (il comportamento corrente atteso è `wait` finché non è implementata l'esplorazione);
+- se l'obiettivo è nascosto, il planner non riceve le sue coordinate e sceglie una frontiera da esplorare;
+- la memoria spaziale registra celle osservate e posizioni visitate;
+- il gioco viene completato su più seed senza accedere allo stato nascosto;
+- il simulatore usa una griglia 30×30 e può restare irrisolto al limite di turni fissato, registrando il limite senza fallire i test di regressione;
 - l'obiettivo mantiene la posizione dopo la prima azione direzionale e cambia dopo la seconda;
 - l'obiettivo non si sovrappone al giocatore o all'ostacolo;
 - l'ostacolo cambia casella dopo ogni azione direzionale senza sovrapporsi al giocatore o all'obiettivo;
@@ -84,6 +87,13 @@ Definire i test minimamente necessari per verificare che il sistema stia effetti
 - l'adattatore applica ogni mossa allo stato del gioco simulato;
 - il ciclo osserva nuovamente lo stato aggiornato;
 - il gioco segnala la vittoria solo quando il giocatore raggiunge l'obiettivo;
+- il nemico si attiva quando il giocatore entra nel raggio di 4 caselle e lo insegue;
+- il nemico è esposto al planner usando il campo ostacoli esistente, senza un campo dedicato;
+- giocatore ed entità partono da 10 PV; ogni attacco infligge 3 PV e la difesa annulla il danno;
+- l'osservazione espone i PV senza etichette o istruzioni di combattimento;
+- l'osservazione espone due controlli opachi senza la loro corrispondenza semantica;
+- l'agente seleziona controlli opachi in base all'incertezza e aggiorna profili medi confrontando osservazioni prima/dopo, senza leggere esiti semanticamente etichettati;
+- un'entità a 0 PV diventa un ostacolo statico; il giocatore a 0 PV perde la partita;
 - le esperienze del ciclo sono registrate in memoria.
 
 ## Test di performance

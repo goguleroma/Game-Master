@@ -1,5 +1,9 @@
+from unittest.mock import patch
+
 from core.engine import GameEngine
-from core.types import Action
+from core.types import Action, ActionResult
+from core.memory import MemoryStore
+from decision.exploration_policy import ExplorationPolicy
 from simulated_game.game import GridGame, GridGameInputAdapter
 
 
@@ -23,6 +27,7 @@ def test_random_target_is_valid_distant_and_seed_reproducible() -> None:
     first = GridGame(seed=42)
     repeat = GridGame(seed=42)
 
+    assert first.width == first.height == 30
     assert first.target == repeat.target
     assert first.target != first.position
     assert first.target not in first.obstacles
@@ -45,18 +50,107 @@ def test_observation_hides_target_outside_four_cell_vision_radius() -> None:
     assert "goal" not in frame["objects"]
 
 
-def test_agent_waits_when_target_is_hidden_instead_of_getting_hidden_coordinates() -> None:
+def test_agent_explores_when_target_is_hidden_without_receiving_its_coordinates() -> None:
     game = GridGame(seed=42)
     game.target = (9, 9)
     engine = GameEngine()
     engine.input_adapter = GridGameInputAdapter(game)
 
-    result = engine.process_frame(game.observe(), source="test_limited_vision")
+    frame = game.observe()
+    frame["controls"] = []
+    result = engine.process_frame(frame, source="test_limited_vision")
 
     assert result is not None
-    assert result.success is False
-    assert result.details["status"] == "waiting_for_visible_target"
-    assert game.position == (0, 1)
+    assert result.success is True
+    assert result.details["status"] == "moved"
+    assert game.position != (0, 1)
+    assert frame["hud"]["grid"]["target"] is None
+    assert engine.memory.experiences[-1]["action"].name.startswith("move_")
+    first_destination = game.position
+    engine.process_frame(game.observe(), source="test_limited_vision")
+    assert engine.memory.spatial.grid[first_destination].visited
+
+
+def test_enemy_can_be_seen_without_a_new_observation_field() -> None:
+    game = GridGame(seed=42)
+    game.enemy_position = (3, 1)
+
+    frame = game.observe()
+    grid = frame["hud"]["grid"]
+
+    assert [3, 1] in grid["obstacles"]
+    assert "enemy" not in frame
+    assert "enemy" not in frame["objects"]
+    assert {
+        "id": "entity-2",
+        "position": [3, 1],
+        "health": 10,
+    } in grid["entities"]
+
+
+def test_game_master_tracks_and_categorizes_anonymous_moving_entity() -> None:
+    game = GridGame(seed=42)
+    game.enemy_position = (4, 1)
+    engine = GameEngine()
+    engine.input_adapter = GridGameInputAdapter(game)
+
+    for _ in range(3):
+        frame = game.observe()
+        frame["controls"] = []
+        engine.process_frame(frame, source="test_entity_categories")
+
+    entity = engine.memory.entities["entity-2"]
+    assert entity.category in {"mobile", "approaches_agent"}
+    assert entity.observation_count >= 2
+    assert entity.position != (4, 1)
+
+
+def test_enemy_alerts_within_vision_and_pursues_player() -> None:
+    game = GridGame(seed=42)
+    game.enemy_position = (4, 2)
+    player_start = game.position
+    enemy_start = game.enemy_position
+
+    result = game.execute(Action(name="move_down"))
+
+    assert game.enemy_alerted
+    assert game.enemy_position != enemy_start
+    assert result.details["status"] == "moved"
+    assert abs(game.enemy_position[0] - game.position[0]) + abs(
+        game.enemy_position[1] - game.position[1]
+    ) < abs(enemy_start[0] - player_start[0]) + abs(
+        enemy_start[1] - player_start[1]
+    )
+
+
+def test_agent_outcomes_with_pursuing_enemy_across_multiple_seeds() -> None:
+    outcomes = []
+    for seed in range(10):
+        game = GridGame(seed=seed)
+        engine = GameEngine()
+        engine.logger.logger.disabled = True
+        engine.input_adapter = GridGameInputAdapter(game)
+
+        for _ in range(200):
+            engine.process_frame(game.observe(), source="test_seeded_exploration")
+            if game.won or game.caught:
+                break
+
+        assert game.won or game.caught or len(engine.memory.experiences) == 200
+        outcomes.append((
+            game.won,
+            game.caught,
+            game.player_health,
+            game.enemy_health,
+            sum(
+                experience["action"].name in {"control_1", "control_2"}
+                for experience in engine.memory.experiences
+            ),
+        ))
+
+    assert any(won for won, _, _, _, _ in outcomes)
+    assert any(not won and not caught for won, caught, _, _, _ in outcomes)
+    assert any(control_trials for _, _, _, _, control_trials in outcomes)
 
 
 def test_obstacle_moves_after_each_directional_action_without_overlapping() -> None:
@@ -71,7 +165,7 @@ def test_obstacle_moves_after_each_directional_action_without_overlapping() -> N
         assert obstacle != previous_obstacle
         assert obstacle != game.position
         assert obstacle != target
-        assert result.details["obstacle"] == list(obstacle)
+        assert "obstacle" not in result.details
 
 
 def test_target_moves_after_every_second_directional_action() -> None:
@@ -86,7 +180,8 @@ def test_target_moves_after_every_second_directional_action() -> None:
     assert game.target != initial_target
     assert game.target != game.position
     assert game.target not in game.obstacles
-    assert second_result.details["target"] == list(game.target)
+    observed_target = game.observe()["hud"]["grid"]["target"]
+    assert observed_target == (list(game.target) if game.is_visible(game.target) else None)
     assert second_result.details["move_count"] == 2
 
 
@@ -100,4 +195,140 @@ def test_grid_game_reports_blocked_move_without_changing_position() -> None:
     assert result.success is False
     assert result.details["status"] == "blocked_by_obstacle"
     assert game.position == start
-    assert result.details["obstacle"] != [2, 1]
+    assert "obstacle" not in result.details
+
+
+def test_health_is_visible_without_an_enemy_label_or_combat_instructions() -> None:
+    game = GridGame(seed=42)
+    game.position = (3, 1)
+    game.enemy_position = (4, 1)
+
+    frame = game.observe()
+
+    assert frame["hud"]["health"] == 10
+    assert {"id": "entity-2", "position": [4, 1], "health": 10} in frame["hud"]["grid"]["entities"]
+    assert frame["controls"] == ["control_1", "control_2"]
+    assert "enemy" not in frame
+    assert "attack" not in str(frame).lower()
+    assert "defend" not in str(frame).lower()
+
+
+def test_generic_control_policy_learns_effects_from_observation_changes() -> None:
+    policy = ExplorationPolicy()
+    memory = MemoryStore()
+    observation = lambda player_health, entity_health: {
+        "objects": ["player", "obstacle"],
+        "controls": ["control_1", "control_2"],
+        "hud": {
+            "health": player_health,
+            "grid": {
+                "width": 30,
+                "height": 30,
+                "position": [1, 1],
+                "visible_cells": [[1, 1], [2, 1]],
+                "obstacles": [[2, 1]],
+                "entities": [
+                    {"id": "entity-2", "position": [2, 1], "health": entity_health}
+                ],
+            },
+        },
+        "confidence": 1.0,
+    }
+
+    observation_values = (
+        (10, 10),
+        (7, 7),
+        (7, 7),
+        (4, 7),
+        (4, 7),
+        (4, 7),
+        (4, 7),
+    )
+    actions = [
+        policy.decide(observation(*values), memory)
+        for values in observation_values
+    ]
+
+    assert actions[0].name in {"control_1", "control_2"}
+    assert actions[1].name != actions[0].name
+    assert actions[-1].name not in {"control_1", "control_2"}
+    trials = policy.control_learner.trials[(1,)]
+    assert set(trials) == {"control_1", "control_2"}
+    assert all(len(control_trials) == 3 for control_trials in trials.values())
+    first_effect = trials[actions[0].name][0]
+    assert first_effect["hud.health"] == -3
+    assert first_effect["hud.grid.entities[0].health"] == -3
+
+
+def test_defense_prevents_damage_and_an_attacking_entity_retreats() -> None:
+    game = GridGame(seed=42)
+    game.position = (1, 1)
+    game.enemy_position = (2, 1)
+    game.obstacles = {(9, 9)}
+    with patch.object(game, "_enemy_combat_choice", return_value="attack"):
+        result = game.execute(Action(name="control_2"))
+
+    assert game.player_health == 10
+    assert game.enemy_health == 10
+    assert game.enemy_position is not None
+    assert game._distance(game.position, game.enemy_position) == 2
+    assert result.details == {"status": "completed"}
+
+
+def test_an_attacking_entity_is_not_damaged_when_it_defends() -> None:
+    game = GridGame(seed=42)
+    game.position = (1, 1)
+    game.enemy_position = (2, 1)
+    game.obstacles = {(9, 9)}
+    with patch.object(game, "_enemy_combat_choice", return_value="defend"):
+        result = game.execute(Action(name="control_1"))
+
+    assert game.player_health == 10
+    assert game.enemy_health == 10
+    assert game.enemy_position == (2, 1)
+    assert result.details == {"status": "completed"}
+
+
+def test_combat_attacks_deal_three_damage() -> None:
+    game = GridGame(seed=42)
+    game.position = (1, 1)
+    game.enemy_position = (2, 1)
+    game.obstacles = {(9, 9)}
+    with patch.object(game, "_enemy_combat_choice", return_value="attack"):
+        game.execute(Action(name="control_1"))
+
+    assert game.player_health == 7
+    assert game.enemy_health == 7
+
+
+def test_player_attack_can_remove_entity_as_a_regular_obstacle() -> None:
+    game = GridGame(seed=42)
+    game.position = (1, 1)
+    game.enemy_position = (2, 1)
+    game.obstacles = {(9, 9)}
+    with patch.object(game, "_enemy_combat_choice", return_value="attack"):
+        for _ in range(4):
+            game.enemy_position = (2, 1)
+            game.execute(Action(name="control_1"))
+
+    assert game.enemy_position is None
+    assert game.enemy_health == 0
+    assert (2, 1) in game.static_obstacles
+    frame = game.observe()
+    assert [2, 1] in frame["hud"]["grid"]["obstacles"]
+    assert all(entity["id"] != "entity-2" for entity in frame["hud"]["grid"]["entities"])
+
+
+def test_player_death_ends_game_as_a_loss() -> None:
+    game = GridGame(seed=42)
+    game.position = (1, 1)
+    game.enemy_position = (2, 1)
+    game.obstacles = {(9, 9)}
+    game.player_health = 1
+    with patch.object(game, "_enemy_combat_choice", return_value="attack"):
+        result = game.execute(Action(name="control_1"))
+
+    assert game.player_health == 0
+    assert game.caught
+    assert result.details == {"status": "completed"}
+    assert game.observe()["hud"]["status"] == "lost"
