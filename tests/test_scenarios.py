@@ -69,6 +69,26 @@ def test_scenario_unknown_object() -> None:
     assert action.name == "wait"
 
 
+def test_unseen_mixed_signals_produce_and_record_a_response() -> None:
+    engine = GameEngine()
+    frame = {
+        "objects": ["player", "start_button", "key", "hazard"],
+        "hud": {"status": "playing", "health": 1},
+        "goal": "move_left",
+        "confidence": 0.55,
+    }
+
+    result = engine.process_frame(frame, source="test")
+
+    assert result is not None
+    assert len(engine.memory.records) == 1
+    record = engine.memory.records[0]
+    assert record["state"].objects == frame["objects"]
+    assert record["state"].hud == frame["hud"]
+    assert record["action"] is not None
+    assert record["result"] is result
+
+
 def test_memory_records_actions() -> None:
     engine = GameEngine()
     action = engine.planner.choose_action(

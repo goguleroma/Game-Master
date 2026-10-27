@@ -25,24 +25,37 @@ class GameEngine:
                 self.logger.warning("No frame captured; retrying.")
                 continue
 
-            observation = Observation(
-                image=frame,
-                timestamp=0.0,
-                metadata={"source": "capture"},
-            )
+            self.process_frame(frame)
 
-            state = self.state_extractor.extract(observation)
-            action = self.planner.choose_action(state)
+    def process_frame(self, frame: object, source: str = "capture") -> ActionResult | None:
+        observation = Observation(
+            image=frame,
+            timestamp=0.0,
+            metadata={"source": source},
+        )
+        self.logger.info(f"Observation received: {frame}")
 
-            if action is None:
-                self.logger.info("No action selected; waiting.")
-                continue
+        state = self.state_extractor.extract(observation)
+        self.logger.info(
+            f"Extracted state: objects={state.objects}, hud={state.hud}, "
+            f"goal={state.goal}, confidence={state.confidence}"
+        )
 
-            result = self.input_adapter.execute(action)
-            self.memory.record({
-                "state": state,
-                "action": action,
-                "result": result,
-            })
+        action = self.planner.choose_action(state)
+        if action is None:
+            self.logger.info("Planner selected no action.")
+            return None
 
-            self.logger.info(f"Action executed: {action.name} -> {result.success}")
+        self.logger.info(
+            f"Planner decision (rule-based): {action.name}, params={action.params}"
+        )
+        result = self.input_adapter.execute(action)
+        self.memory.record({
+            "state": state,
+            "action": action,
+            "result": result,
+        })
+        self.logger.info(
+            f"Action result: success={result.success}, details={result.details}"
+        )
+        return result
