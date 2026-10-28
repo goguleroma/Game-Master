@@ -1,21 +1,33 @@
-from core.memory import MemoryStore
-from core.world_model import WorldModel
-from decision.action_manager import ActionManager
-from decision.control_learner import ControlLearner
-from decision.planner import Planner
+from core.types import ActionResult
+from .action_manager import ActionManager
+from .control_learner import ControlLearner
+from .memory import GridMemoryStore
+from .planner import GridStrategyParameters, Planner
+from .world_model import WorldModel
 
 
 class ExplorationPolicy:
-    def __init__(self) -> None:
-        self.planner = Planner()
+    def __init__(
+        self,
+        strategy: GridStrategyParameters | None = None,
+    ) -> None:
+        self.planner = Planner(strategy)
         self.world_model = WorldModel()
         self.action_manager = ActionManager()
         self.control_learner = ControlLearner()
+        self._pending_step: tuple[tuple[int, int], tuple[int, int]] | None = None
 
-    def observe_action_result(self, details: dict[str, object], memory: MemoryStore) -> None:
+    def observe_result(self, result: ActionResult, memory: GridMemoryStore) -> None:
+        details = result.details
         self.control_learner.observe_action_result(details, memory)
+        if (
+            self._pending_step is not None
+            and details.get("status") in {"blocked_by_boundary", "blocked_by_obstacle"}
+        ):
+            self.planner.record_blocked_transition(*self._pending_step)
+        self._pending_step = None
 
-    def decide(self, observation: object, memory: MemoryStore):
+    def decide(self, observation: object, memory: GridMemoryStore):
         if hasattr(observation, "hud"):
             normalized_observation = {
                 "objects": observation.objects,
@@ -41,6 +53,7 @@ class ExplorationPolicy:
                     value="",
                     turn=current_turn,
                 )
+            memory.observe_goal(state.target_position, list(visible))
             for obstacle in state.obstacle_positions:
                 memory.mark_cell(
                     obstacle,
@@ -79,7 +92,6 @@ class ExplorationPolicy:
                 normalized_observation,
                 memory.working.last_action,
                 memory.working.last_result,
-                state.current_position,
             )
 
         planner_state = state if state.grid_size is not None else observation
@@ -105,11 +117,25 @@ class ExplorationPolicy:
                 desired_direction,
             )
         if control is not None:
+            predicted_direction = self.control_learner.predicted_displacement(control)
+            self._pending_step = (
+                (state.current_position, desired_direction)
+                if state.current_position is not None
+                and desired_direction is not None
+                and predicted_direction
+                == (float(desired_direction[0]), float(desired_direction[1]))
+                else None
+            )
             return self.action_manager.get_control_action(
                 control,
                 available_controls,
             )
 
+        self._pending_step = (
+            (state.current_position, desired_direction)
+            if state.current_position is not None and desired_direction is not None
+            else None
+        )
         if action is None:
             return self.action_manager.get_action("wait")
 

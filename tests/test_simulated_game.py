@@ -1,17 +1,16 @@
 from unittest.mock import patch
 
-from core.engine import GameEngine
 from core.types import Action, ActionResult
-from core.memory import MemoryStore
-from decision.exploration_policy import ExplorationPolicy
-from simulated_game.game import GridGame, GridGameInputAdapter
+from simulated_game.agent.exploration_policy import ExplorationPolicy
+from simulated_game.agent.memory import GridMemoryStore as MemoryStore
+from simulated_game.game import GridGame
+from simulated_game.runtime import create_grid_engine
 
 
 def test_agent_reaches_grid_goal_around_obstacle() -> None:
     game = GridGame(seed=7)
     game.target = (1, 1)
-    engine = GameEngine()
-    engine.input_adapter = GridGameInputAdapter(game)
+    engine = create_grid_engine(game)
 
     for _ in range(game.width * game.height):
         frame = game.observe()
@@ -55,8 +54,7 @@ def test_observation_hides_target_outside_four_cell_vision_radius() -> None:
 def test_agent_explores_when_target_is_hidden_without_receiving_its_coordinates() -> None:
     game = GridGame(seed=42)
     game.target = (9, 9)
-    engine = GameEngine()
-    engine.input_adapter = GridGameInputAdapter(game)
+    engine = create_grid_engine(game)
 
     frame = game.observe()
     frame["controls"] = []
@@ -71,6 +69,147 @@ def test_agent_explores_when_target_is_hidden_without_receiving_its_coordinates(
     first_destination = game.position
     engine.process_frame(game.observe(), source="test_limited_vision")
     assert engine.memory.spatial.grid[first_destination].visited
+
+
+def test_policy_reuses_a_recently_seen_goal_after_it_leaves_current_vision() -> None:
+    policy = ExplorationPolicy()
+    memory = MemoryStore()
+    visible_goal = {
+        "controls": [],
+        "goal": "reach_goal",
+        "confidence": 1.0,
+        "hud": {
+            "grid": {
+                "width": 4,
+                "height": 3,
+                "position": [1, 1],
+                "target": [2, 1],
+                "visible_cells": [[1, 1], [2, 1]],
+                "obstacles": [],
+            }
+        },
+    }
+    hidden_goal = {
+        "controls": [],
+        "goal": "reach_goal",
+        "confidence": 1.0,
+        "hud": {
+            "grid": {
+                "width": 4,
+                "height": 3,
+                "position": [1, 1],
+                "target": None,
+                "visible_cells": [[1, 1]],
+                "obstacles": [],
+            }
+        },
+    }
+
+    policy.decide(visible_goal, memory)
+    action = policy.decide(hidden_goal, memory)
+
+    assert memory.spatial.known_goal_positions == [(2, 1)]
+    assert action.name == "move_right"
+
+
+def test_policy_forgets_a_goal_when_its_location_is_visible_and_empty() -> None:
+    policy = ExplorationPolicy()
+    memory = MemoryStore()
+    visible_goal = {
+        "controls": [],
+        "confidence": 1.0,
+        "hud": {
+            "grid": {
+                "width": 4,
+                "height": 3,
+                "position": [1, 1],
+                "target": [2, 1],
+                "visible_cells": [[1, 1], [2, 1]],
+                "obstacles": [],
+            }
+        },
+    }
+    observed_empty = {
+        "controls": [],
+        "confidence": 1.0,
+        "hud": {
+            "grid": {
+                "width": 4,
+                "height": 3,
+                "position": [1, 1],
+                "target": None,
+                "visible_cells": [[1, 1], [2, 1]],
+                "obstacles": [],
+            }
+        },
+    }
+
+    policy.decide(visible_goal, memory)
+    policy.decide(observed_empty, memory)
+
+    assert memory.spatial.known_goal_positions == []
+    assert memory.spatial.grid[(2, 1)].value != "target"
+
+
+def test_policy_recovers_from_a_blocked_planned_transition() -> None:
+    policy = ExplorationPolicy()
+    memory = MemoryStore()
+    observation = {
+        "controls": [],
+        "confidence": 1.0,
+        "hud": {
+            "grid": {
+                "width": 4,
+                "height": 3,
+                "position": [1, 1],
+                "target": [3, 1],
+                "visible_cells": [
+                    [x, y] for y in range(3) for x in range(4)
+                ],
+                "obstacles": [],
+            }
+        },
+    }
+
+    first_action = policy.decide(observation, memory)
+    assert first_action.name == "move_right"
+    policy.observe_result(
+        ActionResult(success=False, details={"status": "blocked_by_obstacle"}),
+        memory,
+    )
+    recovery_action = policy.decide(observation, memory)
+
+    assert recovery_action.name in {"move_up", "move_down"}
+
+
+def test_policy_does_not_blame_planned_step_for_unmapped_control_failure() -> None:
+    policy = ExplorationPolicy()
+    memory = MemoryStore()
+    observation = {
+        "controls": ["opaque_input"],
+        "confidence": 1.0,
+        "hud": {
+            "grid": {
+                "width": 4,
+                "height": 3,
+                "position": [1, 1],
+                "target": [3, 1],
+                "visible_cells": [
+                    [x, y] for y in range(3) for x in range(4)
+                ],
+                "obstacles": [],
+            }
+        },
+    }
+
+    action = policy.decide(observation, memory)
+    policy.observe_result(
+        ActionResult(success=False, details={"status": "blocked_by_obstacle"}),
+        memory,
+    )
+
+    assert action.name == "opaque_input"
+    assert policy.planner._blocked_transitions == {}
 
 
 def test_enemy_can_be_seen_without_a_new_observation_field() -> None:
@@ -93,8 +232,7 @@ def test_enemy_can_be_seen_without_a_new_observation_field() -> None:
 def test_game_master_tracks_and_categorizes_anonymous_moving_entity() -> None:
     game = GridGame(seed=42)
     game.enemy_position = (4, 1)
-    engine = GameEngine()
-    engine.input_adapter = GridGameInputAdapter(game)
+    engine = create_grid_engine(game)
 
     for _ in range(3):
         frame = game.observe()
@@ -129,9 +267,8 @@ def test_agent_outcomes_with_active_pursuer_across_multiple_seeds() -> None:
     outcomes = []
     for seed in range(10):
         game = GridGame(seed=seed)
-        engine = GameEngine()
+        engine = create_grid_engine(game)
         engine.logger.logger.disabled = True
-        engine.input_adapter = GridGameInputAdapter(game)
 
         for _ in range(200):
             engine.process_frame(game.observe(), source="test_seeded_exploration")
@@ -186,6 +323,17 @@ def test_target_moves_after_every_second_directional_action() -> None:
     observed_target = game.observe()["hud"]["grid"]["target"]
     assert observed_target == (list(game.target) if game.is_visible(game.target) else None)
     assert second_result.details["move_count"] == 2
+
+
+def test_static_goal_scenario_disables_target_motion_and_pursuer() -> None:
+    game = GridGame(seed=42, moving_target=False, pursuer_enabled=False)
+    target = game.target
+
+    game.execute(Action(name="control_2"))
+    game.execute(Action(name="control_3"))
+
+    assert game.target == target
+    assert game.enemy_position is None
 
 
 def test_grid_game_reports_blocked_move_without_changing_position() -> None:

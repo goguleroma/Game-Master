@@ -1,43 +1,89 @@
 from core.engine import GameEngine
-from core.types import Action, GameState, Observation
+from core.memory import MemoryStore
+from core.types import Action, ActionResult, GameState, Observation
 
 
-def test_engine_initialization() -> None:
-    engine = GameEngine()
-    assert engine is not None
-    assert engine.memory is not None
-    assert engine.planner is not None
-    assert engine.input_adapter is not None
+class RecordingPolicy:
+    def __init__(self) -> None:
+        self.observations: list[GameState] = []
+        self.results: list[ActionResult] = []
+
+    def decide(self, observation: GameState, memory: MemoryStore) -> Action:
+        self.observations.append(observation)
+        return Action(name="opaque-action", params={"value": observation.hud["value"]})
+
+    def observe_result(self, result: ActionResult, memory: MemoryStore) -> None:
+        self.results.append(result)
 
 
-def test_mocked_state_produces_click_action() -> None:
-    engine = GameEngine()
-    frame = {"objects": ["start_button"], "hud": {"status": "menu"}, "goal": "start", "confidence": 0.9}
-    observation = Observation(image=frame, timestamp=0.0)
+class RecordingExecutor:
+    def __init__(self) -> None:
+        self.actions: list[Action] = []
 
-    state = engine.state_extractor.extract(observation)
-    action = engine.planner.choose_action(state)
-
-    assert state.objects == ["start_button"]
-    assert action is not None
-    assert action.name == "click"
-    assert action.params["x"] == 500
+    def execute(self, action: Action) -> ActionResult:
+        self.actions.append(action)
+        return ActionResult(success=True, details={"status": "executed"})
 
 
-def test_mocked_loop_keeps_input_adapter_valid() -> None:
-    engine = GameEngine()
-    action = Action(name="move_left", params={"steps": 2})
-    result = engine.input_adapter.execute(action)
+class FixedObservationAdapter:
+    def __init__(self) -> None:
+        self.observations: list[Observation] = []
 
-    assert result.success is True
-    assert result.details["status"] == "moved_left"
-    assert result.details["steps"] == 2
+    def extract(self, observation: Observation) -> GameState:
+        self.observations.append(observation)
+        return GameState(objects=["normalized"], hud={"value": "adapted"})
 
 
-def test_no_frame_returns_unknown_state() -> None:
-    engine = GameEngine()
-    observation = Observation(image=None, timestamp=0.0)
-    state = engine.state_extractor.extract(observation)
+def test_engine_delegates_decision_and_execution_without_action_assumptions() -> None:
+    policy = RecordingPolicy()
+    executor = RecordingExecutor()
+    engine = GameEngine(policy, executor)
 
-    assert "unknown" in state.objects
-    assert state.goal is None
+    result = engine.process_frame(
+        {
+            "objects": ["unclassified-object"],
+            "hud": {"value": "opaque-state"},
+            "goal": "uninterpreted-intent",
+            "confidence": 0.8,
+        },
+        source="contract-test",
+    )
+
+    assert result is not None
+    assert result.success
+    assert policy.observations[0].hud == {"value": "opaque-state"}
+    assert executor.actions[0].name == "opaque-action"
+    assert policy.results == [result]
+    assert engine.memory.records[0]["action"] == executor.actions[0]
+
+
+def test_engine_uses_injected_observation_adapter() -> None:
+    policy = RecordingPolicy()
+    executor = RecordingExecutor()
+    adapter = FixedObservationAdapter()
+    engine = GameEngine(policy, executor, state_extractor=adapter)
+
+    result = engine.process_frame({"raw": "environment-data"}, source="adapter-test")
+
+    assert result is not None
+    assert adapter.observations[0].metadata["source"] == "adapter-test"
+    assert policy.observations[0].objects == ["normalized"]
+    assert policy.observations[0].hud == {"value": "adapted"}
+
+
+def test_engine_records_observation_when_policy_declines_to_act() -> None:
+    class NoActionPolicy(RecordingPolicy):
+        def decide(self, observation: GameState, memory: MemoryStore) -> None:
+            self.observations.append(observation)
+            return None
+
+    policy = NoActionPolicy()
+    executor = RecordingExecutor()
+    engine = GameEngine(policy, executor)
+
+    result = engine.process_frame({"hud": {"value": 1}}, source="contract-test")
+
+    assert result is None
+    assert len(policy.observations) == 1
+    assert executor.actions == []
+    assert engine.memory.records == []

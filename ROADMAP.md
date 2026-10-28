@@ -1,5 +1,15 @@
 # ROADMAP.md
 
+## Stato verificato al 2026-10-28
+
+- Core generico con policy/esecutore iniettati; agent e memoria spaziale della griglia confinati nell'adapter simulato.
+- Ciclo end-to-end simulato, apprendimento di sei controlli anonimi, memoria persistente e test dell'adapter: presenti.
+- Task statico: 40/40 vittorie con memoria volatile e persistente nei tre ordini valutati; la persistenza riduce i turni medi.
+- Task dinamico: in un ordine da 40 seed, 25 vittorie volatile contro 22 persistenti; non è dimostrato un beneficio di vittorie.
+- Ricerca strategica: 14 varianti valutate; il migliore ha fatto 10/20 vittorie held-out contro 8/20 baseline, ma con 6 regressioni appaiate, quindi non promosso.
+- Prossimo obiettivo: ampliare lo spazio strategico e le repliche held-out per target mobili, senza promuovere candidati con regressioni.
+- Non implementati: acquisizione/percezione/input reali e trasferimento tra giochi.
+
 ## Fase 0 — Fondazione e struttura
 
 Obiettivo: mettere in piedi la base del progetto in modo coerente.
@@ -20,19 +30,20 @@ Componenti coinvolti:
 - GameState
 - Action
 - ActionResult
-- Planner
-- InputAdapter
-- MemoryStore
+- Policy iniettata
+- Esecutore di azioni iniettato
+- Memoria generica d'esperienza
 
 Criterio di completamento:
 - il sistema compie un ciclo completo con dati fittizi e registra un risultato.
 
-## Fase 2 — Benchmark fittizi e test deterministici
+## Fase 2 — Adapter di test e test deterministici
 
 Obiettivo: validare la logica del sistema senza un gioco reale.
 
 Criteri di completamento:
-- casi di test per menu, stato vuoto, obiettivo move_left, oggetti sconosciuti;
+- test del core che accertano la delega a policy ed esecutore senza nomi d'azione specifici;
+- test della griglia confinati al pacchetto di simulazione;
 - registrazione dei risultati attesi;
 - pipeline di test automatizzati.
 

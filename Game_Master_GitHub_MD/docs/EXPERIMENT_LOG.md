@@ -1,5 +1,7 @@
 # Registro esperimenti
 
+I risultati eseguiti del prototipo sono registrati nel [`EXPERIMENT_LOG.md` principale](../../EXPERIMENT_LOG.md). Questo documento conserva il formato comune per esperimenti futuri; non duplicare qui i risultati senza sincronizzare entrambe le fonti.
+
 ## Modello
 - ID/titolo:
 - Data:

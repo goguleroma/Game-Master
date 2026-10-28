@@ -1,7 +1,8 @@
 from dataclasses import dataclass, field
+import math
 from typing import Any, Dict, List, Optional, Tuple
 
-from core.world_model import WorldState, bfs_shortest_path
+from .world_model import WorldState, bfs_shortest_path
 
 
 @dataclass
@@ -12,11 +13,57 @@ class ActionCandidate:
     confidence: float = 0.0
 
 
+@dataclass(frozen=True)
+class GridStrategyParameters:
+    visit_penalty: float = 1.0
+    information_gain_bonus: float = 0.25
+    goal_change_threshold: float = 1.0
+
+    def __post_init__(self) -> None:
+        for name, value in self.to_mapping().items():
+            low, high = (1, 5) if name == "goal_change_threshold" else (0, 2)
+            if not math.isfinite(value) or not low <= value <= high:
+                raise ValueError(
+                    f"{name} must be a finite value between {low} and {high}."
+                )
+            if name == "goal_change_threshold" and not float(value).is_integer():
+                raise ValueError(f"{name} must be a whole number.")
+
+    @classmethod
+    def from_mapping(cls, values: dict[str, float]) -> "GridStrategyParameters":
+        return cls(
+            visit_penalty=float(values["visit_penalty"]),
+            information_gain_bonus=float(values["information_gain_bonus"]),
+            goal_change_threshold=float(values["goal_change_threshold"]),
+        )
+
+    def to_mapping(self) -> dict[str, float]:
+        return {
+            "visit_penalty": self.visit_penalty,
+            "information_gain_bonus": self.information_gain_bonus,
+            "goal_change_threshold": self.goal_change_threshold,
+        }
+
+
 class Planner:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        strategy: GridStrategyParameters | None = None,
+    ) -> None:
+        self.strategy = strategy or GridStrategyParameters()
         self.last_goal: Optional[Tuple[int, int]] = None
+        self._decision_turn = 0
+        self._blocked_transitions: dict[
+            tuple[Tuple[int, int], Tuple[int, int]], int
+        ] = {}
 
     def choose_action(self, state: Any, memory: Any = None) -> Optional[ActionCandidate]:
+        self._decision_turn += 1
+        self._blocked_transitions = {
+            transition: expiry
+            for transition, expiry in self._blocked_transitions.items()
+            if expiry >= self._decision_turn
+        }
         if state is None:
             return None
 
@@ -33,7 +80,12 @@ class Planner:
                 )
 
         if isinstance(state, WorldState) and state.grid_size is not None:
-            return self._choose_world_action(state, memory)
+            return self._choose_world_action(
+                state,
+                memory,
+                set(self._blocked_transitions),
+                self.strategy,
+            )
 
         if hasattr(state, "goal") and state.goal is not None:
             if state.goal == "move_left":
@@ -54,10 +106,22 @@ class Planner:
 
         return ActionCandidate(name="wait", params={"duration": 0.1}, utility=0.1, confidence=0.1)
 
+    def record_blocked_transition(
+        self,
+        start: Tuple[int, int],
+        direction: Tuple[int, int],
+    ) -> None:
+        destination = (start[0] + direction[0], start[1] + direction[1])
+        self._blocked_transitions[(start, destination)] = self._decision_turn + 2
+
     @staticmethod
     def _choose_world_action(
         state: WorldState,
         memory: Any,
+        blocked_transitions: set[
+            tuple[Tuple[int, int], Tuple[int, int]]
+        ],
+        strategy: GridStrategyParameters,
     ) -> ActionCandidate:
         start = state.current_position
         if start is None:
@@ -72,13 +136,24 @@ class Planner:
         blocked = set(state.obstacle_positions)
         bounds = state.grid_size
 
-        if state.target_position is not None:
+        targets = (
+            [state.target_position]
+            if state.target_position is not None
+            else (
+                []
+                if memory.spatial.goal_change_count
+                >= strategy.goal_change_threshold
+                else list(memory.spatial.known_goal_positions)
+            )
+        )
+        for target in targets:
             path = bfs_shortest_path(
                 start,
-                state.target_position,
+                target,
                 blocked,
                 bounds=bounds,
                 allowed=known_cells,
+                blocked_transitions=blocked_transitions,
             )
             if len(path) > 1:
                 return ActionCandidate(
@@ -96,6 +171,7 @@ class Planner:
                 blocked,
                 bounds=bounds,
                 allowed=known_cells,
+                blocked_transitions=blocked_transitions,
             )
             if len(path) < 2:
                 continue
@@ -108,8 +184,11 @@ class Planner:
             )
             score = (
                 len(path) - 1
-                + cell.visit_count * bounds[0] * bounds[1]
-                - information_gain * 0.25
+                + cell.visit_count
+                * bounds[0]
+                * bounds[1]
+                * strategy.visit_penalty
+                - information_gain * strategy.information_gain_bonus
             )
             candidates.append((score, frontier[1], frontier[0], -information_gain, path))
 

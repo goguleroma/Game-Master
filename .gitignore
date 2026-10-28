@@ -12,4 +12,6 @@ venv/
 .coverage
 htmlcov/
 .gm-memory.sqlite3
+.gm-strategy-*.json
+.gm-neural-*.pt
 .DS_Store

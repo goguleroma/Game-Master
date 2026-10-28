@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+from core.types import Action
+
 
 @dataclass
 class ActionSpec:
@@ -20,21 +22,21 @@ class ActionManager:
             "explore_frontier": ActionSpec(name="explore_frontier", params={"frontier": (0, 0)}),
         }
 
-    def get_action(self, name: str, **kwargs) -> ActionSpec:
+    def get_action(self, name: str, **kwargs) -> Action:
         spec = self.action_registry.get(name)
         if spec is None:
             raise ValueError(f"Unknown action: {name}")
 
-        action = ActionSpec(name=spec.name, params=dict(spec.params))
+        action = Action(name=spec.name, params=dict(spec.params))
         action.params.update(kwargs)
         return action
 
     @staticmethod
-    def get_control_action(name: str, available_controls: object) -> ActionSpec:
+    def get_control_action(name: str, available_controls: object) -> Action:
         if (
             not isinstance(available_controls, list)
             or not isinstance(name, str)
             or name not in available_controls
         ):
             raise ValueError(f"Unavailable control: {name}")
-        return ActionSpec(name=name)
+        return Action(name=name)

@@ -1,20 +1,54 @@
+from typing import Any, Protocol
+
 from core.memory import MemoryStore
 from core.logger import Logger
 from core.types import Action, ActionResult, GameState, Observation
-from decision.planner import Planner
-from decision.exploration_policy import ExplorationPolicy
 from perception.capture import ScreenCapture
 from perception.state_extractor import StateExtractor
-from control.input_adapter import InputAdapter
+
+
+class DecisionPolicy(Protocol):
+    def decide(self, observation: GameState, memory: Any) -> Action | None: ...
+
+    def observe_result(self, result: ActionResult, memory: Any) -> None: ...
+
+
+class AgentMemory(Protocol):
+    @property
+    def records(self) -> list[dict[str, Any]]: ...
+
+    def observe_frame(self, frame: object) -> None: ...
+
+    def record(self, entry: dict[str, Any]) -> None: ...
+
+    def update_working_memory(
+        self,
+        observation: object,
+        action: str | None,
+        result: str | None,
+    ) -> None: ...
+
+
+class ActionExecutor(Protocol):
+    def execute(self, action: Action) -> ActionResult: ...
+
+
+class ObservationAdapter(Protocol):
+    def extract(self, observation: Observation) -> GameState: ...
 
 
 class GameEngine:
-    def __init__(self, memory: MemoryStore | None = None) -> None:
+    def __init__(
+        self,
+        policy: DecisionPolicy,
+        input_adapter: ActionExecutor,
+        memory: AgentMemory | None = None,
+        state_extractor: ObservationAdapter | None = None,
+    ) -> None:
         self.capture = ScreenCapture()
-        self.state_extractor = StateExtractor()
-        self.planner = Planner()
-        self.exploration_policy = ExplorationPolicy()
-        self.input_adapter = InputAdapter()
+        self.state_extractor = state_extractor or StateExtractor()
+        self.policy = policy
+        self.input_adapter = input_adapter
         self.memory = memory if memory is not None else MemoryStore()
         self.logger = Logger()
 
@@ -39,47 +73,27 @@ class GameEngine:
 
         state = self.state_extractor.extract(observation)
         self.memory.observe_frame(state)
-        self.logger.info(
-            f"Extracted state: objects={state.objects}, hud={state.hud}, "
-            f"goal={state.goal}, confidence={state.confidence}"
-        )
+        self.logger.info(f"Extracted state with confidence={state.confidence}")
 
-        action = self.exploration_policy.decide(state, self.memory)
-        inference = self.exploration_policy.control_learner.latest_inference
-        if inference is not None:
-            self.logger.info(f"Observed control effects: {inference}")
-            self.exploration_policy.control_learner.latest_inference = None
-        if self.memory.entities:
-            categories = {
-                entity_id: {
-                    "category": entity.category,
-                    "behavior_hypothesis": entity.behavior_hypothesis,
-                    "confidence": round(
-                        entity.behavior_confidence or entity.confidence, 2
-                    ),
-                }
-                for entity_id, entity in self.memory.entities.items()
-            }
-            self.logger.info(f"Observed entity hypotheses: {categories}")
+        action = self.policy.decide(state, self.memory)
         if action is None:
-            self.logger.info("Planner selected no action.")
+            self.logger.info("Policy selected no action.")
             return None
 
         self.logger.info(
-            f"Planner decision (rule-based): {action.name}, params={action.params}"
+            f"Policy decision: {action.name}, params={action.params}"
         )
         result = self.input_adapter.execute(action)
-        self.exploration_policy.observe_action_result(result.details, self.memory)
+        self.policy.observe_result(result, self.memory)
         self.memory.record({
             "state": state,
             "action": action,
             "result": result,
         })
         self.memory.update_working_memory(
-            self.memory.working.current_observation,
+            state,
             action.name,
             result.details.get("status"),
-            self.memory.working.last_position,
         )
         self.logger.info(
             f"Action result: success={result.success}, details={result.details}"

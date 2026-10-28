@@ -1,23 +1,49 @@
 import sys
 from pathlib import Path
 
-from core.engine import GameEngine
-from core.memory import MemoryStore
-from simulated_game.game import GridGame, GridGameInputAdapter
+from simulated_game.agent.memory import GridMemoryStore
+from simulated_game.game import GridGame
+from simulated_game.runtime import create_grid_engine
+from simulated_game.strategy_config import load_strategy
 
 
-def run_game(max_steps: int = 200, seed: int | None = None) -> bool:
+def run_game(
+    max_steps: int = 200,
+    seed: int | None = None,
+    policy_kind: str = "baseline",
+    model_path: Path | None = None,
+) -> bool:
     game = GridGame(seed=seed)
-    engine = GameEngine(
-        memory=MemoryStore(
+    if policy_kind == "baseline":
+        from simulated_game.agent.exploration_policy import ExplorationPolicy
+
+        policy = ExplorationPolicy(
+            load_strategy(Path(".gm-strategy-dynamic.json"), "dynamic")
+        )
+    elif policy_kind == "neural":
+        from simulated_game.agent.neural_policy import NeuralGridPolicy
+
+        if model_path is None or not model_path.is_file():
+            raise FileNotFoundError(
+                "A trained neural model is required; run "
+                "python -m simulated_game.neural_experiment first."
+            )
+        policy = NeuralGridPolicy(seed=seed or 0)
+        policy.agent.load(model_path, resume_training=False)
+    else:
+        raise ValueError(f"Unknown policy: {policy_kind}")
+    engine = create_grid_engine(
+        game,
+        memory=GridMemoryStore(
             game_id="grid_30x30_v1",
             database_path=Path(".gm-memory.sqlite3"),
-        )
+        ),
+        policy=policy,
     )
-    engine.input_adapter = GridGameInputAdapter(game)
 
     print(
-        f"Game-Master grid test (simulato, seed={seed}, nessun input reale).",
+        f"Game-Master grid test (simulato, policy={policy_kind}, seed={seed}, "
+        "nessun input reale).",
         file=sys.stderr,
         flush=True,
     )

@@ -49,17 +49,20 @@ game_master/
 │   ├── state_extractor.py
 │   └── __init__.py
 ├── decision/
-│   ├── planner.py
 │   └── __init__.py
 ├── control/
-│   ├── input_adapter.py
 │   └── __init__.py
+├── simulated_game/
+│   ├── agent/       # Grid-only policy, model, memory and control adapter
+│   ├── game.py      # Isolated test environment
+│   └── runtime.py   # Composition of the simulator adapters with core
 ├── utils/
 │   ├── config.py
 │   └── __init__.py
 ├── tests/
 │   ├── test_engine.py
-│   └── test_scenarios.py
+│   ├── test_exploration.py
+│   └── test_simulated_game.py
 ├── AGENTS.md
 ├── ARCHITECTURE.md
 ├── ROADMAP.md
@@ -73,17 +76,46 @@ game_master/
 └── .env.example
 ```
 
-## Stato corrente
+## Confine tra core e ambienti
 
-Il repository ha una base iniziale coerente ma ancora molto minimale:
-- struttura di progetto impostata;
-- loop base operativo definito;
-- tipi dati iniziali e memoria semplice;
-- planner e input adapter mockati per il primo test di logica;
-- benchmark fittizi per validare il flusso senza un gioco reale;
-- assenza di percezione reale e di un gioco target operativo.
+`core.GameEngine` coordina lo scambio tra stato normalizzato, policy, esecutore di azioni e memoria d'esperienza. Policy ed esecutore sono obbligatoriamente iniettati; un adapter di osservazione può essere fornito per convertire dati di un ambiente in `GameState`. Il core non sceglie mosse di griglia, non conosce obiettivi o controlli del simulatore e non ha un comportamento di gioco predefinito.
 
-Questo è il punto corretto per continuare: validare il nucleo logico prima di aggiungere percezione di alto livello o tecnologie più pesanti.
+Il codice specifico della griglia è confinato in `simulated_game/agent/` e `simulated_game/`. È un adapter di test sostituibile, non una dipendenza del core. Per provarlo:
+
+```powershell
+python -m simulated_game --seed 4
+```
+
+Il test adapter include una prima ricerca evolutiva che genera e confronta varianti dei parametri di esplorazione su seed condivisi e le verifica su holdout indipendenti:
+
+```powershell
+python -m simulated_game.strategy_search --scenario dynamic
+```
+
+È un esperimento limitato alla policy della griglia, non una capacità generalista né una rete neurale. La strategia locale viene aggiornata solo quando supera il criterio held-out documentato nel README della simulazione.
+
+### Esperimento neurale isolato
+
+La policy DQN è opzionale e confinata al simulatore. La baseline resta la modalità predefinita; il modello neurale non viene promosso né sostituisce la strategia baseline automaticamente. Per installare le dipendenze aggiuntive, addestrare un candidato e confrontarlo su seed held-out appaiati:
+
+```powershell
+python -m pip install -r requirements-neural.txt
+python -m simulated_game.neural_experiment --train-episodes 300 --holdout-episodes 40
+```
+
+Il training riprende automaticamente il checkpoint `.gm-neural-training.pt` se presente; ogni avvio aggiunge gli episodi indicati a quelli precedenti e salva pesi, optimizer, replay buffer, RNG e contatori. Valuta ogni 50 episodi sullo stesso set di validation seed; il test finale usa seed separati e mai riutilizzati nelle riprese successive. Il miglior checkpoint secondo la validation viene conservato in `.gm-neural-training.best.pt`; il checkpoint latest permette di continuare il training. Per cominciare un esperimento indipendente, scegliere un percorso `--model` diverso e passare `--fresh`, per esempio `python -m simulated_game.neural_experiment --model .gm-neural-ablation.pt --fresh`.
+
+Il report confronta vittorie, sconfitte, timeout, stalli, score e regressioni appaiate. La baseline non viene promossa o sostituita automaticamente. Il checkpoint migliore si può provare esplicitamente con `python -m simulated_game --policy neural --model .gm-neural-training.best.pt`. I vecchi checkpoint di soli pesi restano caricabili in inferenza, ma per riprendere da un nuovo training usare un percorso di checkpoint distinto. È un esperimento di reinforcement learning sul simulatore, non prova di ragionamento generale o trasferimento tra giochi.
+
+Se il training da zero non dà risultati sufficienti, la modalità sperimentale di warm-start imita prima le decisioni della baseline e poi continua con DQN:
+
+```powershell
+python -m simulated_game.neural_experiment --model .gm-neural-imitation.pt --fresh --initialization baseline --train-episodes 300 --imitation-episodes 100
+```
+
+Il warm-start è un confronto separato e non modifica il modello baseline.
+
+Non esiste ancora un adapter per un gioco reale. `python -m app.main` lo segnala esplicitamente invece di avviare un agente simulato o di inventare controlli.
 
 ## Come usare il progetto
 
@@ -104,7 +136,7 @@ python -m pytest
 
 ```bash
 python -m pytest tests/test_engine.py
-python -m pytest tests/test_scenarios.py
+python -m pytest tests/test_simulated_game.py
 ```
 
 ## Documentazione principale
@@ -119,12 +151,11 @@ python -m pytest tests/test_scenarios.py
 
 ## Prossimi passi
 
-1. Validare i benchmark fittizi e il loop base.
-2. Aggiungere un primo livello di stato osservabile reale.
-3. Definire un gioco target o ambiente controllato di prova.
-4. Collegare capture, percezione e input reale.
-5. Introdurre i primi elementi di memoria, apprendimento e strategia.
-6. Rivedere la scelta tecnologica solo dopo aver misurato dove si perde tempo.
+1. Continuare a sviluppare il core tramite contratti e componenti neutrali rispetto all'ambiente.
+2. Migliorare il test della ricerca di target dinamici esclusivamente nell'adapter simulato.
+3. Scegliere un ambiente reale consentito prima di implementare i relativi adapter di osservazione e input.
+4. Dimostrare il trasferimento tra ambienti con misure riproducibili prima di generalizzare le strategie.
+5. Valutare reti neurali soltanto dopo aver misurato un limite che i meccanismi attuali non risolvono.
 
 ## Nota tecnica
 

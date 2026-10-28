@@ -26,6 +26,14 @@ Osservazione -> Stato -> Decisione -> Azione -> Verifica -> Esperienza -> Appren
 
 ## Moduli principali
 
+### Confine del core e degli adapter
+
+`core.GameEngine` è un orchestratore senza strategia di gioco integrata: riceve una policy e un esecutore di azioni, e può ricevere un adapter per tradurre osservazioni dell'ambiente in `GameState`. Registra il ciclo tramite memoria d'esperienza generica. Non importa planner, regole, controlli o memoria spaziale di un gioco specifico.
+
+Tutto il comportamento della griglia di prova (simulatore, world model, planner BFS, policy, apprendimento dei controlli, memoria spaziale e input adapter) vive sotto `simulated_game/`. `simulated_game.runtime` compone questi componenti con il core per i test; il core non dipende da quel pacchetto. Un altro ambiente deve fornire i propri adapter senza aggiungere le sue regole al core.
+
+`core.strategy_search` è un generatore indipendente dall'ambiente: riceve parametri numerici con limiti espliciti, seed e una funzione di valutazione fornita dal chiamante. Può selezionare, combinare e mutare varianti; è l'adapter a definire il significato dei parametri e il criterio di risultato.
+
 ### Central Agent
 
 Responsabile del coordinamento del ciclo decisionale e della gestione delle interazioni tra moduli. Non deve essere un monolite, ma un coordinatore di componenti specializzati.
@@ -150,6 +158,8 @@ Knowledge update
 
 - Python come base di sviluppo iniziale.
 - modularità e separazione di responsabilità;
+- il core non deve importare implementazioni concrete degli adapter o strategie di un ambiente;
+- nessuna policy predefinita che assuma controlli, obiettivi o dinamiche di gioco;
 - logging e tracciabilità di ogni decisione;
 - possibilità di testare ciascun modulo indipendentemente;
 - gestione dell'incertezza come prima classe;

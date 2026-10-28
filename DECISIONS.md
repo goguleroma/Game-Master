@@ -47,3 +47,11 @@
 **Motivazione:** evitare che un errore o un risultato sporadico diventi credenza permanente.
 
 **Conseguenze:** la memoria è la base per l'apprendimento affidabile.
+
+## Decisione 7 — Generazione e promozione di varianti strategiche
+
+**Decisione:** iniziare con ricerca evolutiva interpretabile su parametri bounded forniti dalla policy dell'ambiente. Valutare ogni variante sugli stessi seed della baseline e validare il candidato su seed held-out separati prima di promuoverlo.
+
+**Motivazione:** permette variazioni autonome e confrontabili con pochi dati, senza assumere che una rete neurale o una ricerca libera siano già utili.
+
+**Conseguenze:** la prima integrazione riguarda soltanto due pesi della policy di esplorazione nella simulazione a griglia. Un mancato miglioramento lascia intatta la strategia salvata; il risultato non implica generalizzazione.

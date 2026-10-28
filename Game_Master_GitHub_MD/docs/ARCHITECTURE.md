@@ -13,9 +13,14 @@ Implementare soltanto i componenti necessari al primo percorso end-to-end.
 - **Memory:** esperienze, ipotesi, conoscenze e skill.
 - **Planner:** obiettivi e azioni candidate.
 - **Experiment Manager:** esperimenti limitati e valutazione delle evidenze.
+- **Strategy Search:** propone varianti di parametri tramite selezione, crossover e mutazione; riceve evaluator e limiti dall'adapter dell'ambiente.
 - **Input Adapter:** invio input, limiti, cancellazione e rilascio garantito.
 - **Safety Gate:** rifiuto di azioni non valide o eccessive.
 - **Learning/Evaluation:** aggiornamento, baseline e metriche.
+
+## Confine implementato
+
+`core.GameEngine` riceve policy ed esecutore di azioni tramite dependency injection; può inoltre ricevere un adapter di osservazione. Il core registra esperienze con memoria generica e non contiene planner, coordinate, controlli o regole del simulatore. L'implementazione a griglia, inclusi world model e memoria spaziale, è confinata in `simulated_game/agent/` e `simulated_game/`, composta attraverso `simulated_game.runtime`. Il test simula un ambiente concreto ma non definisce l'architettura o la policy di GM.
 
 ## Struttura suggerita
 ```text

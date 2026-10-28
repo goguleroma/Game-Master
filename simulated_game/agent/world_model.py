@@ -125,6 +125,7 @@ def bfs_shortest_path(
     blocked: set[Tuple[int, int]],
     bounds: Optional[Tuple[int, int]] = None,
     allowed: Optional[set[Tuple[int, int]]] = None,
+    blocked_transitions: Optional[set[tuple[Tuple[int, int], Tuple[int, int]]]] = None,
 ) -> List[Tuple[int, int]]:
     queue = deque([start])
     came_from: Dict[Tuple[int, int], Tuple[int, int] | None] = {start: None}
@@ -143,6 +144,8 @@ def bfs_shortest_path(
             if allowed is not None and nxt not in allowed:
                 continue
             if nxt in blocked:
+                continue
+            if blocked_transitions is not None and (current, nxt) in blocked_transitions:
                 continue
             if nxt in came_from:
                 continue

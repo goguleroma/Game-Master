@@ -4,53 +4,31 @@
 
 Definire i test minimamente necessari per verificare che il sistema stia effettivamente migliorando e non soltanto “girando”.
 
-## Test di base
+## Test del core indipendente dall'ambiente
 
-### 1. Test inizializzazione del motore
+### 1. Dipendenze esplicite
 
-**Contesto:** il sistema viene creato senza un gioco reale.
+**Contesto:** creare `GameEngine` senza policy o esecutore.
 
-**Risultato atteso:**
-- GameEngine inizializzato;
-- planner inizializzato;
-- input adapter inizializzato;
-- memory inizializzata.
+**Risultato atteso:** la costruzione richiede componenti espliciti; il core non sceglie una policy o un adapter di test come fallback.
 
-### 2. Stato senza dati
+### 2. Decisione delegata
 
-**Input simulato:** `None` o stato vuoto.
+**Contesto:** un adapter fornisce uno stato normalizzato e una policy produce un'azione con nome e parametri arbitrari.
 
-**Risultato atteso:**
-- stato non crasha;
-- planner ritorna `wait`;
-- input adapter esegue un risultato positivo per wait.
+**Risultato atteso:** il core passa lo stato alla policy ed esegue l'azione attraverso l'esecutore iniettato, senza interpretare nomi di azioni o regole del gioco.
 
-### 3. Menu con bottone start
+### 3. Risultato ed esperienza
 
-**Input simulato:** `{"objects": ["start_button"], "goal": "start"}`
+**Contesto:** l'esecutore restituisce un risultato.
 
-**Risultato atteso:**
-- planner sceglie `click`;
-- input adapter esegue click;
-- memory registra azione e risultato.
+**Risultato atteso:** il core passa il risultato alla policy e registra stato, azione e risultato in memoria.
 
-### 4. Obiettivo move_left
+### 4. Policy senza azione
 
-**Input simulato:** `{"objects": ["player"], "goal": "move_left"}`
+**Contesto:** la policy dichiara che non è opportuno agire.
 
-**Risultato atteso:**
-- planner sceglie `move_left`;
-- input adapter esegue movimento;
-- risultato registrato come successo.
-
-### 5. Oggetti sconosciuti
-
-**Input simulato:** `{"objects": ["unknown"]}`
-
-**Risultato atteso:**
-- planner sceglie `wait`;
-- sistema non crasha;
-- la conoscenza resta incerta e non diventa azione falsa.
+**Risultato atteso:** il core non chiama l'esecutore e non registra un'azione inventata.
 
 ## Test di integrazione
 
@@ -66,6 +44,8 @@ Definire i test minimamente necessari per verificare che il sistema stia effetti
 **Risultato atteso:**
 - il ciclo completo esegue senza eccezioni;
 - la memoria registra `state`, `action` e `result`.
+
+Le prove delle regole della griglia sono confinate ai test dell'adapter in `tests/test_simulated_game.py`; i test del core non devono codificare obiettivi o controlli di alcun gioco.
 
 ### 7. Gioco simulato a griglia
 
@@ -93,6 +73,9 @@ Definire i test minimamente necessari per verificare che il sistema stia effetti
 - l'osservazione espone i PV senza etichette o istruzioni di combattimento;
 - l'osservazione espone i sei controlli opachi senza la loro corrispondenza semantica;
 - il planner indica un passo verso obiettivo/frontiera e il learner, dopo aver osservato gli effetti, seleziona il controllo anonimo che realizza lo spostamento desiderato;
+- un target visto e poi uscito dalla visuale resta recuperabile dalla memoria; una cella target osservata vuota invalida l'ipotesi;
+- dopo una transizione di movimento segnalata come bloccata, il planner evita temporaneamente quel passo e trova un percorso alternativo se esiste;
+- il benchmark può isolare target statico e target dinamico e riporta esiti appaiati, turni, stalli, blocchi, copertura, progresso e accuratezza delle predizioni;
 - l'agente aggiorna il valore atteso dei controlli usando progresso verso l'obiettivo, variazioni del proprio stato e risultato terminale, mantenendo i controlli anonimi;
 - la selezione esplora ancora alternative incerte, ma interrompe le prove in un contesto quando tutti i controlli hanno prodotto solo osservazioni invariate;
 - gli esiti appresi sono persistiti per gioco e possono influire sulle scelte delle partite successive;
@@ -111,6 +94,17 @@ Definire i test minimamente necessari per verificare che il sistema stia effetti
 - tempo di decisione;
 - tempo di input adapter;
 - tempo totale.
+
+### 9. Ricerca e promozione di varianti
+
+**Contesto:** generare varianti con parametri limitati e valutare baseline e candidati.
+
+**Risultato atteso:**
+- la ricerca è riproducibile con seed fissati e non produce parametri fuori dai limiti;
+- tutti i candidati di training sono confrontati sugli stessi seed;
+- la selezione usa reward e evaluator forniti dall'ambiente, non regole di griglia nel core;
+- la promozione usa seed di holdout separati e gli stessi seed per baseline e candidato;
+- una variante con esiti regressivi resta non promossa e non cambia la strategia caricata dai run successivi.
 
 ## Criteri di accettazione per fase
 

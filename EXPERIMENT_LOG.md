@@ -185,6 +185,83 @@ Documentare gli esperimenti, i risultati e le conclusioni in modo replicabile.
 - Conclusione: il learner ora collega una direzione di piano a controlli anonimi osservandone l'effetto sullo stato, e la persistenza riduce di circa 8–10 il numero medio di azioni di controllo. Tuttavia, in questo benchmark non aumenta le vittorie: ne produce 21–22 contro 25 in modalità volatile, con più timeout. È un progresso architetturale, non una dimostrazione di miglioramento del tasso di successo.
 - Limiti e prossimi criteri: la politica di esplorazione delle frontiere e il bersaglio che cambia frequentemente limitano il completamento. L'euristica delle quattro posizioni per classificare un controllo senza movimento può confondere un input bloccato da ostacoli con un input non locomotivo; le stime restano specifiche del gioco. Il prossimo miglioramento deve distinguere blocco locale da effetto stabile e verificare il progresso sul bersaglio dinamico, mantenendo il confronto appaiato.
 
+### Esperimento 19 - Diagnosi dei fallimenti, memoria del target e recovery
+
+- Data: 2026-10-28
+- Ipotesi: alcuni timeout derivano dal fatto che il planner dimentica un obiettivo appena esce dalla visuale; la persistenza dei controlli dovrebbe invece mostrare il proprio effetto in un ambiente statico che isola navigazione e ricerca.
+- Diagnosi iniziale: nel gioco dinamico, sui seed 0–39, la baseline volatile ha avuto 25 vittorie e 15 timeout, senza sconfitte. I 15 timeout non hanno mostrato una sequenza di 8 turni senza movimento; l'obiettivo è stato osservato in media solo 5,97 turni, mentre si è spostato circa 63,75 volte per partita. Un test statico ha riprodotto il difetto: seed 2 ha coperto 896/900 celle senza trovare l'obiettivo, perché `known_goal_positions` veniva aggiornata ma ignorata dal planner.
+- Modifiche: la memoria aggiorna l'ultima posizione nota del target e la elimina se la cella è nuovamente osservata vuota o se viene osservata una nuova posizione. Posizioni-obiettivo diverse osservate nel tempo formano un'ipotesi di target dinamico; il planner non insegue più una posizione memorizzata quando questa ipotesi è attiva. Dopo `blocked_by_obstacle` o `blocked_by_boundary`, il planner evita la transizione fallita per due decisioni, ma soltanto se l'effetto direzionale del controllo era già identificato. Aggiunto `python -m simulated_game.benchmark` per confronti appaiati e metriche replicabili; lo scenario `static` fissa il target e disabilita l'inseguitore, quello `dynamic` mantiene le dinamiche complete.
+- Test: 47 superati (`python -m pytest -q`), inclusi uso del target memorizzato, invalidazione dopo osservazione vuota, inferenza di target dinamico, mancata attribuzione causale con controllo ignoto, recovery e smoke test del report benchmark. `git diff --check` senza errori sostanziali (restano solo avvisi di conversione CRLF in tre Markdown).
+- Metodo: stessi 40 seed 0–39, massimo 200 turni, ordine casuale riproducibile con seed 9204; memoria volatile contro database persistente pulito e temporaneo. Lo scenario statico è stato ripetuto su tre ordini di seed (9204, 9205, 9206); il dinamico su un ordine.
+- Risultati statici (target immobile, inseguitore disabilitato): in tutti e tre gli ordini, entrambe le condizioni hanno ottenuto 40/40 vittorie e nessuna sconfitta o timeout. Media turni: 78,0 con memoria volatile, 62,67–62,70 con memoria persistente. Le predizioni direzionali osservate sono state corrette nel 100% dei casi (2.741 campioni volatile, 2.497 persistenti); gli spostamenti ai confini sono scesi da 81 a 2. La memoria persistente conserva la capacità di completamento e riduce i turni in questo task controllato.
+- Risultati dinamici (target mobile, inseguitore attivo), ordine 9204: memoria volatile 25 vittorie/0 sconfitte/15 timeout, 132,2 turni medi; persistente 22/0/17 timeout/1 stallo esplicito, 124,0 turni medi. Il target si è spostato in media 63,75 volte con memoria volatile e 61,48 con persistenza; era visibile per 5,97 e 5,05 turni medi. Le posizioni diverse del target hanno generato un'ipotesi di mobilità in 35 episodi volatili e 29 persistenti (84 e 71 evidenze complessive), ma gli esiti sono rimasti rispettivamente 25 e 22 vittorie. Il progresso misurato verso la posizione del target pre-azione è 320 e 343; gli esiti appaiati sono cambiati in 19 seed. Nessuna evidenza che la persistenza o l'ipotesi di mobilità migliori le vittorie nello scenario dinamico.
+- Conclusione: la perdita della posizione-obiettivo era una lacuna concreta, ora corretta e verificata; anche la mobilità viene ipotizzata da osservazioni ripetute, ma questa nuova informazione non ha ancora migliorato la prestazione dinamica. La memoria dei controlli dimostra un beneficio misurabile nello scenario isolato, ma non generalizza automaticamente allo scenario dinamico, dove il target si sposta spesso e viene visto raramente. Non si può dichiarare un miglioramento globale di GM sulla base di questi risultati; il dato dinamico usa un solo ordine.
+- Limiti e follow-up: l'accuratezza direzionale misura solo controlli con effetto di spostamento già appreso; i controlli di combattimento o non identificati non entrano nel calcolo. I timeout dinamici sono per lo più veri turn-limit, non stalli; un episodio persistente si è invece fermato esplicitamente senza una mossa pianificabile. Il prossimo lavoro è migliorare la copertura/ricerca del target mobile, gestire il caso senza frontier raggiungibile e ripetere il benchmark dinamico su più ordini, mantenendo separato il task statico.
+
+### Esperimento 20 - Separazione del core dall'adapter a griglia
+
+- Data: 2026-10-28
+- Obiettivo: verificare che il core di GM non contenga policy, planner, dati spaziali o input specifici del gioco simulato.
+- Modifiche: `GameEngine` ora richiede policy ed esecutore espliciti e accetta un adapter di osservazione; la memoria del core conserva solo osservazioni e record generici. Planner, world model, learner, memoria spaziale e policy sono stati spostati in `simulated_game/agent/`; le regole del mondo restano in `simulated_game/game.py`, composte con il core da `simulated_game/runtime.py`. Rimosso il demo con azioni predeterminate da `app.main`.
+- Verifica: nessun riferimento a `simulated_game`, griglia, frontiere, controlli o planner nei moduli `core`, `app`, `perception`, `decision` e `control`; `python -m pytest -q` ha superato 40 test, incluso l'uso dell'adapter di osservazione iniettato; `git diff --check` senza errori.
+- Conclusione: la simulazione è ora un adapter sostituibile, non una policy o una dipendenza del core. Le regole di griglia continuano a esistere esclusivamente per testare un ambiente concreto; questo non dimostra generalizzazione né collegamento a giochi reali.
+- Follow-up: mantenere questo confine quando si aggiungeranno altri ambienti e richiedere evidenza di trasferimento prima di promuovere euristiche specifiche a capacità generali.
+
+### Esperimento 21 - Ricerca evolutiva di varianti strategiche
+
+- Data: 2026-10-28
+- Obiettivo: fare generare a GM varianti di strategia, confrontarle in modo riproducibile e impedire che il tuning sui seed di ricerca venga scambiato per un miglioramento generalizzabile.
+- Metodo: motore di ricerca generico su genome numerici bounded con mutazione, crossover e selezione; adapter della griglia espone la penalità di rivisitazione, il bonus d'informazione e la soglia d'evidenza per considerare mobile un target ricordato. Candidati e baseline condividono i seed di training; una holdout distinta è usata per la promozione. Configurazione misurata: seed di ricerca 4815, popolazione 6, 3 generazioni, training seed 4815–4819 e holdout seed 1004815–1004834.
+- Criterio di promozione: almeno due vittorie appaiate aggiuntive senza regressioni, oppure stessi esiti terminali per seed e almeno il 5% di riduzione dei turni medi di vittoria. La configurazione è scenario-specifica, locale e caricata dalla partita dinamica successiva solo se convalidata.
+- Verifica: 47 test unitari e d'integrazione superati (riproducibilità, vincoli e score, parametri che cambiano la selezione, round-trip, rifiuto di configurazioni non valide e criterio di promozione appaiata); smoke test end-to-end con candidati/holdout.
+- Esito su episodi completi: 14 varianti valutate su 5 seed di training; il migliore (`goal_change_threshold=5`, `information_gain_bonus=0`, `visit_penalty=0.074066`) ha ottenuto score medio 0,80732 contro 0,62502 baseline. Su 20 seed held-out, candidato 10 vittorie/0 sconfitte/10 timeout contro 8/0/12 baseline; 8 seed sono migliorati e 6 seed sono peggiorati, per un guadagno netto di due vittorie. Turni medi per vittoria: 99,4 contro 90,25; copertura media: 0,2498 contro 0,2552.
+- Decisione: nessuna promozione. Il tasso aggregato è salito dal 40% al 50% su un piccolo holdout, ma le regressioni appaiate e i turni medi più alti non rispettano il criterio conservativo di promozione. La configurazione dinamica locale resta quella baseline.
+- Limiti: lo spazio di ricerca modifica tre parametri (due continui e uno intero) della policy di esplorazione a griglia; 5 seed di training e 20 di holdout non dimostrano un miglioramento stabile. Nessun trasferimento ad altri ambienti dimostrato.
+
+### Esperimento 22 - Smoke test della policy neurale DQN
+
+- Data: 2026-10-28
+- Obiettivo: verificare end-to-end addestramento, salvataggio, caricamento e confronto appaiato della nuova policy neurale senza modificare la baseline.
+- Metodo: policy DQN con 20 episodi di training, massimo 40 turni per episodio; seed 7319–7338. Holdout dinamico appaiato su 20 seed 1007319–1007338, anch'esso con limite di 40 turni.
+- Verifiche: la pipeline è terminata, ha prodotto e caricato il checkpoint temporaneo; 659 aggiornamenti DQN, loss media 0,04302. La suite completa ha superato 53 test; `git diff --check` non ha segnalato errori di whitespace.
+- Esiti training: 2 vittorie, 0 sconfitte, 18 timeout.
+- Esiti holdout: rete 0 vittorie/0 sconfitte/20 timeout; baseline 0/0/20. Nessun miglioramento o regressione di vittoria appaiata; score medio della rete 0,00289 contro 0,02566 baseline.
+- Decisione: smoke test riuscito come verifica tecnica, ma non è evidenza di apprendimento efficace. Il limite breve di 40 turni rende il confronto inadeguato a stimare la prestazione del benchmark completo; nessuna promozione e nessun checkpoint conservato.
+- Limiti e follow-up: eseguire il protocollo documentato con 300 episodi di training, 40 holdout e 200 turni prima di valutare il candidato. Il DQN resta confinato al simulatore e non dimostra ragionamento generale, obiettivi semantici autonomi o trasferimento.
+
+### Esperimento 23 - Training DQN persistente e valutazione periodica
+
+- Data: 2026-10-28
+- Obiettivo: consentire all'addestramento di riprendere fra invocazioni e separare selezione validation e confronto finale held-out.
+- Modifiche: i checkpoint riprendibili ora conservano pesi online/target, optimizer, replay buffer, RNG, contatori e configurazione; salvataggio atomico; seed training continuativi; validation appaiata ogni intervallo; checkpoint latest e miglior checkpoint validation distinti. I seed di training, validation e holdout sono controllati per non sovrapporsi. L'interfaccia normale continua a non addestrare la rete.
+- Verifiche: round-trip di optimizer/replay/RNG e continuità dell'azione esplorativa; due invocazioni consecutive del trainer hanno portato il contatore episodi da 1 a 2 e hanno continuato con il seed successivo; il checkpoint best è stato caricato per la modalità d'inferenza. Quattro test neurali mirati superati.
+- Risultati prestazionali: nessuna nuova conclusione di efficacia. Le prove ridotte nei test validano persistenza e flusso di valutazione, non un miglioramento rispetto alla baseline.
+- Decisione: si può ora continuare un training lungo tra invocazioni, con validation periodica e holdout separato. Nessuna promozione automatica della baseline.
+- Follow-up: eseguire il protocollo con almeno 300 episodi, 20 validation, 40 holdout e 200 turni. Se l'apprendimento da zero resta debole, valutare come esperimento separato il warm-start per imitazione della baseline e confrontare i due metodi su seed finali mai visti.
+
+### Esperimento 24 - Training DQN completo da zero
+
+- Data: 2026-10-28
+- Obiettivo: misurare se il DQN da zero riesce a superare la baseline dopo un training esteso.
+- Metodo: 300 episodi di training, massimo 200 turni, seed 7319–7618; validation periodica su 20 seed 2007319–2007338; confronto finale su 40 seed held-out 1007319–1007358. Non vi è sovrapposizione fra split.
+- Aggiornamenti: 43.685; loss media del training: 0,066.
+- Miglior validation: episodio 250, 5/20 vittorie e 0 sconfitte, contro baseline 10/20 vittorie e 0 sconfitte; 3 miglioramenti e 8 regressioni appaiate.
+- Holdout del checkpoint latest: DQN 6/40 vittorie, 26 sconfitte e 8 timeout; baseline 24/40 vittorie, 0 sconfitte e 16 timeout. Score medio -0,49248 contro 0,61714; 3 miglioramenti e 21 regressioni appaiate.
+- Verifica aggiuntiva del checkpoint scelto come migliore su validation (episodio 250), sugli stessi 40 seed held-out: 6 vittorie, 1 sconfitta e 33 timeout; score 0,14767, con 2 miglioramenti e 20 regressioni appaiate contro la baseline.
+- Decisione: anche il checkpoint scelto è nettamente peggiore; nessuna promozione. Il modello scratch resta un candidato negativo e il caso attiva l'esperimento pianificato di imitazione baseline seguita da fine-tuning DQN.
+- Limiti: singolo training seed e singolo holdout; risultati specifici del simulatore e di questa configurazione. Il dato non dimostra incapacità assoluta del DQN, ma è sufficiente a non adottare questo candidato.
+
+### Esperimento 25 - Warm-start per imitazione baseline e fine-tuning DQN
+
+- Data: 2026-10-28
+- Obiettivo: verificare se inizializzare la rete con esempi di decisioni baseline riduce il divario osservato nel training DQN da zero.
+- Metodo: 100 episodi baseline per generare 13.979 esempi stato-controllo; learner dei controlli baseline mantenuto fra gli episodi dimostratori, memoria spaziale ricreata a ogni episodio. 5 epoche di imitazione supervisionata, poi 300 episodi di fine-tuning DQN. Seed di training 7319–7618; validation fissa 2007319–2007338; holdout finale 1007319–1007358. Gli split di valutazione non sono stati usati per training o imitazione.
+- Training: la baseline dimostratrice ha vinto 52/100 episodi; loss di imitazione 0,39937. 51.279 aggiornamenti totali inclusi circa 550 update supervisionati; loss media del fine-tuning DQN 0,06753.
+- Selezione: miglior validation a 150 episodi DQN, 13/20 vittorie e 0 sconfitte contro 10/20 baseline; 8 miglioramenti e 5 regressioni appaiate. Il criterio richiede almeno due vittorie appaiate aggiuntive e zero regressioni, quindi non è soddisfatto.
+- Holdout del checkpoint best: rete 11/40 vittorie, 3 sconfitte e 26 timeout; baseline 24/40 vittorie, 0 sconfitte e 16 timeout. Score medio 0,22711 contro 0,61714; 4 miglioramenti e 17 regressioni appaiate.
+- Conclusione: warm-start migliora il tasso aggregato rispetto al checkpoint scratch selezionato (11 contro 6 vittorie) e riduce nettamente le sconfitte, ma resta peggiore della baseline e presenta numerose regressioni. Nessuna promozione; il checkpoint resta candidato sperimentale.
+- Follow-up: diagnosticare perché la policy perde informazione utile alla pianificazione e perché il reward di progresso non impedisce l'esposizione al nemico; non aumentare semplicemente gli episodi senza correggere/verificare queste cause. Ripetere solo dopo la modifica su nuovi holdout indipendenti.
+
 ## Registro da aggiornare
 
 Per ogni nuovo esperimento, aggiungere:

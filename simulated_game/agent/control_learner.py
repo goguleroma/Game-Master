@@ -205,6 +205,18 @@ class ControlLearner:
             _DirectionEvidence(),
         ).observe(sample)
 
+    def predicted_displacement(
+        self,
+        control: str,
+    ) -> tuple[float, float] | None:
+        evidence = self._direction_evidence.get(control)
+        if evidence is None or evidence.moving_samples == 0:
+            return None
+        return (
+            evidence.dx_total / evidence.moving_samples,
+            evidence.dy_total / evidence.moving_samples,
+        )
+
     def _observe_transition(
         self,
         observation: dict[str, object],

@@ -1,7 +1,6 @@
 import random
 from collections import deque
 
-from control.input_adapter import InputAdapter
 from core.types import Action, ActionResult
 
 
@@ -15,7 +14,12 @@ class GridGame:
         "control_6": ("defend", None),
     }
 
-    def __init__(self, seed: int | None = None) -> None:
+    def __init__(
+        self,
+        seed: int | None = None,
+        moving_target: bool = True,
+        pursuer_enabled: bool = True,
+    ) -> None:
         self.width = 30
         self.height = 30
         self.vision_radius = 4
@@ -23,12 +27,13 @@ class GridGame:
         self.position = (0, 1)
         self.obstacles = {(2, 1)}
         self.static_obstacles: set[tuple[int, int]] = set()
-        self.enemy_position: tuple[int, int] | None = (7, 1)
+        self.enemy_position: tuple[int, int] | None = (7, 1) if pursuer_enabled else None
         self.player_health = 10
         self.enemy_health = 10
         self.enemy_alerted = False
         self.caught = False
         self._move_count = 0
+        self._moving_target = moving_target
         self._rng = random.Random(seed)
         candidates = [
             (x, y)
@@ -174,7 +179,7 @@ class GridGame:
             )
 
         self._move_obstacle()
-        if self._move_count % 2 == 0:
+        if self._moving_target and self._move_count % 2 == 0:
             self._move_target()
         self._move_enemy()
         return ActionResult(
@@ -334,7 +339,7 @@ class GridGame:
         self.target = self._rng.choice(available_positions)
 
 
-class GridGameInputAdapter(InputAdapter):
+class GridGameInputAdapter:
     def __init__(self, game: GridGame) -> None:
         self.game = game
 

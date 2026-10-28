@@ -1,8 +1,10 @@
 from types import SimpleNamespace
 
-from core.memory import MemoryStore
-from decision.control_learner import ControlLearner
-from decision.exploration_policy import ExplorationPolicy
+from simulated_game.agent.memory import GridMemoryStore as MemoryStore
+from simulated_game.agent.control_learner import ControlLearner
+from simulated_game.agent.exploration_policy import ExplorationPolicy
+from simulated_game.agent.planner import GridStrategyParameters, Planner
+from simulated_game.agent.world_model import WorldState
 
 
 def test_memory_supports_spatial_and_knowledge_tracking() -> None:
@@ -29,6 +31,70 @@ def test_exploration_policy_uses_frontier_when_goal_is_missing() -> None:
 
     assert action is not None
     assert action.name == "explore_frontier"
+
+
+def test_planner_searches_instead_of_chasing_a_goal_inferred_to_be_mobile() -> None:
+    memory = MemoryStore()
+    memory.observe_goal((3, 1), [])
+    memory.observe_goal((2, 1), [])
+    memory.mark_cell((1, 1), seen=True, obstacle=False)
+    memory.mark_cell((1, 0), seen=True, obstacle=False)
+    memory.spatial.frontier = [(1, 0)]
+    state = WorldState(
+        current_position=(1, 1),
+        grid_size=(4, 3),
+    )
+
+    action = Planner().choose_action(state, memory)
+
+    assert memory.spatial.goal_is_dynamic
+    assert memory.spatial.goal_change_count == 1
+    assert action is not None
+    assert action.name == "move_up"
+
+
+def test_strategy_parameters_change_frontier_selection() -> None:
+    memory = MemoryStore()
+    memory.mark_cell((1, 1), seen=True, visited=True)
+    memory.mark_cell((0, 1), seen=True, visited=True)
+    memory.mark_cell((2, 1), seen=True, visited=False)
+    for position in ((2, 0), (2, 2), (3, 1)):
+        memory.mark_cell(position, seen=True)
+    memory.spatial.frontier = [(0, 1), (2, 1)]
+    state = WorldState(current_position=(1, 1), grid_size=(5, 3))
+
+    visit_averse = Planner(GridStrategyParameters(1.0, 0.25)).choose_action(
+        state, memory
+    )
+    information_seeking = Planner(
+        GridStrategyParameters(0.0, 2.0)
+    ).choose_action(state, memory)
+
+    assert visit_averse is not None
+    assert information_seeking is not None
+    assert visit_averse.name == "move_right"
+    assert information_seeking.name == "move_left"
+
+
+def test_strategy_can_vary_how_much_mobility_evidence_to_require() -> None:
+    memory = MemoryStore()
+    memory.observe_goal((3, 1), [])
+    memory.observe_goal((4, 1), [])
+    for x in range(1, 5):
+        memory.mark_cell((x, 1), seen=True)
+    state = WorldState(current_position=(1, 1), grid_size=(6, 3))
+
+    immediate_abandonment = Planner(
+        GridStrategyParameters(goal_change_threshold=1.0)
+    ).choose_action(state, memory)
+    wait_for_evidence = Planner(
+        GridStrategyParameters(goal_change_threshold=2.0)
+    ).choose_action(state, memory)
+
+    assert immediate_abandonment is not None
+    assert wait_for_evidence is not None
+    assert immediate_abandonment.name == "wait"
+    assert wait_for_evidence.name == "move_right"
 
 
 def test_memory_categorizes_anonymous_entity_from_repeated_motion() -> None:
@@ -205,6 +271,7 @@ def test_learner_discovers_control_effects_and_selects_toward_requested_directio
     assert third == second
     assert learner.latest_inference is not None
     assert learner.latest_inference["mean_effects"]["__agent_dx"] == 1.0
+    assert learner.predicted_displacement(second) == (1.0, 0.0)
 
 
 def test_learner_does_not_repeat_stationary_controls_when_direction_is_unknown() -> None:
