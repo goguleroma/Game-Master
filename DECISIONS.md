@@ -55,3 +55,11 @@
 **Motivazione:** permette variazioni autonome e confrontabili con pochi dati, senza assumere che una rete neurale o una ricerca libera siano già utili.
 
 **Conseguenze:** la prima integrazione riguarda soltanto due pesi della policy di esplorazione nella simulazione a griglia. Un mancato miglioramento lascia intatta la strategia salvata; il risultato non implica generalizzazione.
+
+## Decisione 8 — Retrieval episodico conservativo nell'adapter
+
+**Decisione:** registrare contesto osservabile, direzione pianificata ed esito delle azioni a griglia in una memoria episodica locale al gioco. Applicare il punteggio recuperato solo come tie-break tra alternative di costo equivalente; richiedere supporto ripetuto e mantenere limiti alla cache e alla finestra di retrieval.
+
+**Motivazione:** migliorare l'uso dell'esperienza e della memoria prima di introdurre ulteriori modalità di percezione o orchestrazione parallela, riducendo il rischio di sovrascrivere una pianificazione più corta con evidenza debole.
+
+**Conseguenze:** l'implementazione non modifica il core né l'encoder neurale e non generalizza tra giochi. Il run esplorativo corrente è piccolo e confonde i casi episodici con la persistenza delle prove di controllo; prima di valutare un beneficio occorre una ablation dedicata e una replica più ampia.

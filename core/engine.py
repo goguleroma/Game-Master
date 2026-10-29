@@ -1,4 +1,4 @@
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from core.memory import MemoryStore
 from core.logger import Logger
@@ -44,6 +44,8 @@ class GameEngine:
         input_adapter: ActionExecutor,
         memory: AgentMemory | None = None,
         state_extractor: ObservationAdapter | None = None,
+        max_steps: int | None = None,
+        should_stop: Callable[[], bool] | None = None,
     ) -> None:
         self.capture = ScreenCapture()
         self.state_extractor = state_extractor or StateExtractor()
@@ -51,17 +53,27 @@ class GameEngine:
         self.input_adapter = input_adapter
         self.memory = memory if memory is not None else MemoryStore()
         self.logger = Logger()
+        self.max_steps = max_steps
+        self._should_stop = should_stop
 
     def run(self) -> None:
         self.logger.info("Game engine started")
-
+        steps = 0
         while True:
+            if self._should_stop is not None and self._should_stop():
+                self.logger.info("Stop requested; engine loop exiting.")
+                return
+            if self.max_steps is not None and steps >= self.max_steps:
+                self.logger.info(f"Step limit of {self.max_steps} reached; engine loop exiting.")
+                return
             frame = self.capture.get_frame()
             if frame is None:
                 self.logger.warning("No frame captured; retrying.")
                 continue
 
             self.process_frame(frame)
+            if self.max_steps is not None:
+                steps += 1
 
     def process_frame(self, frame: object, source: str = "capture") -> ActionResult | None:
         observation = Observation(

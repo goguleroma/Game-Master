@@ -164,6 +164,53 @@ def test_neural_features_include_planner_direction_intent() -> None:
     ]
 
 
+def test_neural_planner_hint_uses_retrieved_memory_without_changing_encoder_size() -> None:
+    frame = {
+        "objects": ["player", "goal"],
+        "controls": [f"control_{index}" for index in range(1, 7)],
+        "goal": "reach_goal",
+        "confidence": 1.0,
+        "hud": {
+            "health": 10,
+            "grid": {
+                "width": 5,
+                "height": 5,
+                "position": [1, 1],
+                "target": [3, 2],
+                "visible_cells": [[x, y] for y in range(5) for x in range(5)],
+                "obstacles": [],
+                "entities": [],
+            },
+        },
+    }
+    observation = GameState(
+        objects=frame["objects"],
+        hud=frame["hud"],
+        goal=frame["goal"],
+        confidence=frame["confidence"],
+        controls=frame["controls"],
+    )
+    policy = NeuralGridPolicy(seed=31)
+    normalized = policy._normalize(observation)
+    state = policy.world_model.update(normalized)
+    memory = GridMemoryStore()
+    visible_cells = [(x, y) for y in range(5) for x in range(5)]
+    memory.update_working_memory(normalized, None, None)
+    for cell in visible_cells:
+        memory.mark_cell(cell, seen=True, obstacle=False)
+    memory.observe_goal(state.target_position, visible_cells)
+    memory.update_frontier(5, 5)
+    context = memory.build_decision_context(state, normalized)
+    for _ in range(3):
+        memory.record_decision_case(context, (0, 1), 0.5, "moved")
+
+    features = policy._encode(normalized, memory)
+
+    assert len(features) == policy.FEATURE_COUNT == 40
+    assert features[-9:-5] == (0.0, 0.0, 1.0, 0.0)
+    assert memory.retrieval_summary()["guided_decisions"] == 1
+
+
 def test_neural_reward_tracks_planner_progress_when_target_is_hidden() -> None:
     policy = NeuralGridPolicy(seed=23)
     before = {

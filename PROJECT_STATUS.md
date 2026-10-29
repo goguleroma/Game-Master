@@ -44,13 +44,17 @@ Il progetto ha un core di orchestrazione indipendente dall'ambiente e un adapter
 - memoria spaziale e policy di esplorazione collegate all'engine soltanto attraverso la composizione dell'adapter di test
 - memoria dell'ultima posizione del target; la posizione è invalidata se osservata vuota. Posizioni diverse generano evidenza di mobilità; la soglia per smettere di inseguire il target ricordato è configurabile dall'adapter e varia nella ricerca strategica.
 - recovery: dopo una transizione nota come bloccata, il planner evita quel passo per due decisioni. Non attribuisce un blocco a un passo pianificato se il controllo anonimo non ha un effetto di spostamento già identificato.
-- suite completa aggiornata: 57 test superati il 2026-10-29, inclusi DQN, imitazione, adapter, validazione held-out e persistenza delle strategie
+- memoria episodica dell'adapter: registra contesto osservato, direzione pianificata e risultato; recupera fino a 256 casi recenti per gioco, richiede almeno 2 esempi con similarità ≥0,65 e usa l'esito con confidenza. La cache in RAM è limitata a 2.000 casi; SQLite conserva i casi per gioco e li pota a batch. La memoria interviene solo tra scelte di costo equivalente. Anche l'hint del planner della policy neurale la usa senza cambiare l'encoder a 40 feature.
+- suite completa aggiornata: 64 test superati il 2026-10-29, inclusi retrieval episodico, limiti di memoria, DQN, imitazione, adapter, validazione held-out e persistenza delle strategie
 - ricerca strategica evolutiva: genera varianti entro parametri bounded, confronta su seed appaiati e valida su holdout; il primo candidato dinamico ha fatto 10/20 vittorie contro 8/20 baseline ma ha avuto 6 regressioni appaiate, quindi non è stato promosso
 - interfaccia del gioco simulato: sei input esposti come `control_1`–`control_6`; la policy usa gli effetti osservati per tradurre il passo del planner in un controllo anonimo.
 - la mappa ricorda l'ultima posizione osservata dell'obiettivo e la usa quando è fuori visuale; la posizione memorizzata viene scartata quando è osservata vuota. I collegamenti temporaneamente bloccati sono evitati per due decisioni per consentire il recovery.
 - benchmark riproducibile: `python -m simulated_game.benchmark`; distingue obiettivo statico senza inseguitore da scenario dinamico completo e misura esiti, stalli, blocchi, copertura, progresso e accuratezza delle previsioni direzionali.
 - benchmark statico appaiato, 3 ordini di 40 seed: 40/40 vittorie con memoria volatile e persistente in ciascun ordine. Turni medi: 78,0 volatile, 62,67–62,70 persistente. Predizioni direzionali corrette 100% (2.741 campioni volatile, 2.497 persistenti); blocchi ai confini 81 contro 2.
 - benchmark dinamico, un ordine appaiato di 40 seed: volatile 25 vittorie/0 sconfitte/15 timeout; persistente 22/0/17 timeout/1 stallo esplicito. Il bersaglio si è spostato in media 63,75 e 61,48 volte per episodio; era visibile circa 6 e 5 turni. Il target dinamico è stato inferito in 35/40 episodi volatili e 29/40 persistenti, ma non ha migliorato gli esiti in quest'ordine.
+- prova diagnostica episodica, 10 seed appaiati e massimo 100 turni: nello scenario statico 6/10 vittorie volatile e 4/10 persistenti; nel dinamico 2/10 e 6/10. La persistenza comprende anche le prove dei controlli, quindi il run non isola l'effetto causale dei casi episodici e non dimostra un vantaggio; dettagli in Esperimento 30.
+- replica statica su 10 ordini degli stessi 10 seed, massimo 100 turni: 60/100 vittorie volatile e 58/100 persistenti; le vittorie persistenti variano da 4 a 7 per ordine contro 6/10 volatile in ciascuno. I blocchi medi per ordine scendono da 29 a 3 e i turni medi da 71,4 a 64,64, ma gli esiti appaiati cambiano 26 volte (12 miglioramenti e 14 regressioni). La persistenza include prove dei controlli e casi episodici; non isola questi contributi e ripete gli stessi seed. Dettagli in Esperimento 31.
+- benchmark statico più ampio, 40 seed e massimo 200 turni, un ordine: volatile 40/40 vittorie, persistente 39/40 con un timeout; nessuna sconfitta e un solo esito appaiato cambiato. Persistente: 69,05 turni medi contro 74,45; 3 azioni bloccate e 6 senza movimento contro 118 e 179. Segnale di maggiore efficienza, ma non di più vittorie; la persistenza combina prove dei controlli e retrieval episodico. Dettagli in Esperimento 32.
 - memoria iniziale: buffer STM da 60 frame/12 secondi, memoria MTM per stato e piano corrente, esperienze LTM limitate all'istanza, prove di controllo GSM persistite per gioco in SQLite; GM generale resta vuota e non riceve promozioni automatiche
 - latenza di `process_frame` su frame mock: media 7,35 µs, p95 9,20 µs su 1.000 chiamate, logging disabilitato; non rappresenta prestazioni su un gioco reale
 
@@ -66,11 +70,12 @@ Il progetto ha un core di orchestrazione indipendente dall'ambiente e un adapter
 
 ## Priorità attuali
 
-1. Migliorare l'esplorazione dopo aver inferito un target dinamico e valutare su ulteriori ordini di seed; il recupero dei controlli è verificato nel caso statico, ma l'ipotesi di mobilità non ha ancora migliorato le vittorie.
-2. Separare stima/gestione di entità dinamiche da ricerca spaziale e testare trasferimento su un secondo ambiente.
-3. Collegare una fonte di frame reale o un dataset riproducibile, dopo aver scelto un ambiente consentito.
-4. Implementare input reale solo in un ambiente controllato, con stop e limiti operativi.
-5. Misurare separatamente acquisizione, percezione, decisione e input su un benchmark reale.
+1. Isolare l'effetto del retrieval episodico dalle prove dei controlli persistenti e replicare su più ordini di seed, con limite di 200 turni e scenari statico/dinamico.
+2. Migliorare l'esplorazione del target dinamico solo dopo aver misurato il contributo della memoria; il campione diagnostico da 10 seed non è conclusivo.
+3. Separare stima/gestione di entità dinamiche da ricerca spaziale e testare trasferimento su un secondo ambiente.
+4. Collegare una fonte di frame reale o un dataset riproducibile, dopo aver scelto un ambiente consentito.
+5. Implementare input reale solo in un ambiente controllato, con stop e limiti operativi.
+6. Misurare separatamente acquisizione, percezione, decisione e input su un benchmark reale.
 
 ## Limiti noti
 
@@ -82,7 +87,7 @@ Il progetto ha un core di orchestrazione indipendente dall'ambiente e un adapter
 
 ## Prossima azione
 
-Per la policy neurale, verificare un fine-tuning che preservi il comportamento appreso per imitazione: nel test corrente il DQN ha portato la validation da 11/20 a 0/20. Mantenere baseline e split held-out intatti; non promuovere il candidato finché non mostra un vantaggio appaiato replicabile senza regressioni.
+Eseguire un'ablazione appaiata del retrieval episodico che mantenga identiche le prove persistenti dei controlli, ripetere gli ordini di seed e usare il protocollo completo da 200 turni. Conservare separati i risultati della policy neurale: il fine-tuning DQN ha portato la validation da 11/20 a 0/20 e non è promosso.
 
 ## Esperimento neurale in corso
 

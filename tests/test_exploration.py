@@ -1,5 +1,8 @@
 from types import SimpleNamespace
 
+import pytest
+
+from core.types import ActionResult
 from simulated_game.agent.memory import GridMemoryStore as MemoryStore
 from simulated_game.agent.control_learner import ControlLearner
 from simulated_game.agent.exploration_policy import ExplorationPolicy
@@ -18,6 +21,179 @@ def test_memory_supports_spatial_and_knowledge_tracking() -> None:
     assert memory.spatial.frontier
     assert memory.knowledge[0].key == "visible_goal_strategy"
     assert memory.knowledge[0].confidence > 0.5
+
+
+def test_decision_memory_retrieves_supported_preferences_from_similar_contexts() -> None:
+    memory = MemoryStore()
+    context = {
+        "goal_visible": True,
+        "goal_known": True,
+        "target_direction": [1, 1],
+        "goal_dynamic": False,
+        "adjacent_obstacles": [False, False, False, False],
+        "entity_distance_bucket": None,
+        "health_bucket": 2,
+        "frontier_bucket": 2,
+    }
+    memory.record_decision_case(context, (0, 1), 0.5, "moved")
+    memory.record_decision_case(context, (0, 1), 0.25, "moved")
+
+    preferences = memory.retrieve_direction_preferences(context)
+
+    assert preferences[(0, 1)] > 0
+    assert memory.last_retrieval["matched_cases"] == 2
+    assert memory.last_retrieval["preferences"]["0,1"]["support"] == 2
+
+
+def test_decision_memory_requires_repeated_evidence_and_respects_context() -> None:
+    memory = MemoryStore()
+    context = {
+        "goal_visible": True,
+        "goal_known": True,
+        "target_direction": [1, 0],
+        "goal_dynamic": False,
+        "adjacent_obstacles": [False, False, False, False],
+        "entity_distance_bucket": None,
+        "health_bucket": 2,
+        "frontier_bucket": 2,
+    }
+    memory.record_decision_case(context, (1, 0), 1.0, "moved")
+
+    assert memory.retrieve_direction_preferences(context) == {}
+
+    memory.record_decision_case(context, (1, 0), 1.0, "moved")
+    unrelated_context = {
+        **context,
+        "goal_visible": False,
+        "goal_known": False,
+        "target_direction": [-1, 0],
+        "goal_dynamic": True,
+        "adjacent_obstacles": [True, True, True, True],
+        "entity_distance_bucket": 0,
+        "health_bucket": 0,
+        "frontier_bucket": 0,
+    }
+
+    assert memory.retrieve_direction_preferences(unrelated_context) == {}
+
+
+def test_decision_memory_rejects_invalid_context_and_non_finite_rewards() -> None:
+    memory = MemoryStore()
+    context = {
+        "goal_visible": True,
+        "goal_known": True,
+        "target_direction": [1, 0],
+        "goal_dynamic": False,
+        "adjacent_obstacles": [False, False, False, False],
+        "entity_distance_bucket": None,
+        "health_bucket": 2,
+        "frontier_bucket": 2,
+    }
+
+    with pytest.raises(ValueError, match="grid schema"):
+        memory.retrieve_direction_preferences({**context, "unexpected": True})
+    with pytest.raises(ValueError, match="between -1 and 1"):
+        memory.record_decision_case(context, (1, 0), float("nan"), "moved")
+
+
+def test_decision_memory_bounds_working_cache_and_retrieval_window() -> None:
+    memory = MemoryStore()
+    context = {
+        "goal_visible": True,
+        "goal_known": True,
+        "target_direction": [1, 0],
+        "goal_dynamic": False,
+        "adjacent_obstacles": [False, False, False, False],
+        "entity_distance_bucket": None,
+        "health_bucket": 2,
+        "frontier_bucket": 2,
+    }
+
+    for index in range(2001):
+        reward = -1.0 if index == 0 else 1.0
+        memory.record_decision_case(context, (1, 0), reward, "moved")
+
+    preferences = memory.retrieve_direction_preferences(context)
+
+    assert len(memory.decision_cases) == 2000
+    assert memory.last_retrieval["matched_cases"] == 256
+    assert preferences[(1, 0)] > 0
+
+
+def test_decision_memory_persists_per_game_and_guides_equal_length_paths(
+    tmp_path,
+) -> None:
+    database_path = tmp_path / "decision-memory.sqlite3"
+    observation = {"hud": {"health": 10}}
+    state = WorldState(
+        current_position=(1, 1),
+        target_position=(3, 2),
+        obstacle_positions=[],
+        grid_size=(5, 5),
+        confidence=1.0,
+    )
+    visible_cells = [(x, y) for y in range(5) for x in range(5)]
+
+    def prepared_memory(game_id=None):
+        memory = MemoryStore(game_id=game_id, database_path=database_path if game_id else None)
+        memory.update_working_memory(observation, None, None)
+        for cell in visible_cells:
+            memory.mark_cell(cell, seen=True, obstacle=False)
+        memory.observe_goal(state.target_position, visible_cells)
+        return memory
+
+    memory = prepared_memory("grid-test")
+    context = memory.build_decision_context(state, observation)
+    for _ in range(3):
+        memory.record_decision_case(context, (0, 1), 0.5, "moved")
+
+    restored = prepared_memory("grid-test")
+    baseline = prepared_memory()
+    baseline_action = Planner().choose_action(state, baseline)
+    memory_action = Planner().choose_action(state, restored)
+    other_game = prepared_memory("another-grid")
+    other_game_action = Planner().choose_action(state, other_game)
+
+    assert baseline_action is not None and baseline_action.name == "move_right"
+    assert memory_action is not None and memory_action.name == "move_down"
+    assert memory_action.memory_guided is True
+    assert restored.retrieval_summary()["available_cases"] == 3
+    assert other_game_action is not None and other_game_action.name == "move_right"
+
+
+def test_policy_records_action_outcome_with_its_decision_context() -> None:
+    policy = ExplorationPolicy()
+    memory = MemoryStore()
+    observation = {
+        "controls": [],
+        "confidence": 1.0,
+        "hud": {
+            "health": 10,
+            "grid": {
+                "width": 4,
+                "height": 3,
+                "position": [1, 1],
+                "target": [3, 1],
+                "visible_cells": [[x, y] for y in range(3) for x in range(4)],
+                "obstacles": [],
+                "entities": [],
+            },
+        },
+    }
+
+    action = policy.decide(observation, memory)
+    policy.observe_result(
+        ActionResult(
+            success=False,
+            details={"status": "blocked_by_obstacle", "position": [1, 1]},
+        ),
+        memory,
+    )
+
+    assert action is not None and action.name == "move_right"
+    assert len(memory.decision_cases) == 1
+    assert memory.decision_cases[0].direction == (1, 0)
+    assert memory.decision_cases[0].reward == -0.75
 
 
 def test_exploration_policy_uses_frontier_when_goal_is_missing() -> None:
@@ -53,6 +229,68 @@ def test_planner_searches_instead_of_chasing_a_goal_inferred_to_be_mobile() -> N
     assert action.name == "move_up"
 
 
+def test_planner_explores_instead_of_chasing_remembered_goal_for_dynamic_goal() -> None:
+    memory = MemoryStore()
+    memory.observe_goal((5, 1), [])
+    memory.observe_goal((3, 1), [])
+    memory.mark_cell((1, 1), seen=True, obstacle=False)
+    memory.mark_cell((1, 0), seen=True, obstacle=False)
+    memory.spatial.frontier = [(1, 0)]
+    state = WorldState(
+        current_position=(1, 1),
+        grid_size=(4, 3),
+    )
+
+    action = Planner(GridStrategyParameters(goal_change_threshold=2.0)).choose_action(state, memory)
+
+    assert memory.spatial.goal_is_dynamic
+    assert memory.spatial.goal_change_count == 1
+    assert state.target_position is None
+    assert action is not None
+    assert action.name == "move_up"
+
+
+def test_planner_pursues_visible_goal_target_for_dynamic_goal() -> None:
+    memory = MemoryStore()
+    memory.observe_goal((3, 1), [(3, 1)])
+    memory.observe_goal((2, 1), [(2, 1)])
+    memory.mark_cell((1, 1), seen=True, obstacle=False)
+    memory.mark_cell((2, 1), seen=True, obstacle=False)
+    state = WorldState(
+        current_position=(1, 1),
+        target_position=(2, 1),
+        obstacle_positions=[],
+        grid_size=(4, 3),
+        confidence=1.0,
+    )
+
+    action = Planner().choose_action(state, memory)
+
+    assert memory.spatial.goal_is_dynamic
+    assert state.target_position == (2, 1)
+    assert action is not None
+    assert action.name == "move_right"
+
+
+def test_planner_pursues_remembered_goal_below_goal_change_threshold() -> None:
+    memory = MemoryStore()
+    memory.observe_goal((3, 1), [(3, 1)])
+    memory.mark_cell((1, 1), seen=True, obstacle=False)
+    memory.mark_cell((2, 1), seen=True, obstacle=False)
+    memory.spatial.known_goal_positions = [(2, 1)]
+    state = WorldState(
+        current_position=(1, 1),
+        grid_size=(4, 3),
+    )
+
+    action = Planner(GridStrategyParameters(goal_change_threshold=2.0)).choose_action(state, memory)
+
+    assert not memory.spatial.goal_is_dynamic
+    assert memory.spatial.goal_change_count == 0
+    assert action is not None
+    assert action.name == "move_right"
+
+
 def test_strategy_parameters_change_frontier_selection() -> None:
     memory = MemoryStore()
     memory.mark_cell((1, 1), seen=True, visited=True)
@@ -79,9 +317,11 @@ def test_strategy_parameters_change_frontier_selection() -> None:
 def test_strategy_can_vary_how_much_mobility_evidence_to_require() -> None:
     memory = MemoryStore()
     memory.observe_goal((3, 1), [])
-    memory.observe_goal((4, 1), [])
     for x in range(1, 5):
         memory.mark_cell((x, 1), seen=True)
+    memory.spatial.known_goal_positions = [(2, 1)]
+    memory.spatial.goal_change_count = 1
+    memory.spatial.goal_is_dynamic = False
     state = WorldState(current_position=(1, 1), grid_size=(6, 3))
 
     immediate_abandonment = Planner(

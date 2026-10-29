@@ -8,7 +8,9 @@
 - Task dinamico: in un ordine da 40 seed, 25 vittorie volatile contro 22 persistenti; non è dimostrato un beneficio di vittorie.
 - Ricerca strategica: 14 varianti valutate; il migliore ha fatto 10/20 vittorie held-out contro 8/20 baseline, ma con 6 regressioni appaiate, quindi non promosso.
 - Policy neurale: intent BFS e reward di progresso sono testati; su tre holdout il checkpoint progress ha ottenuto 23/40 vs 21/40, 27/40 vs 26/40 e 24/40 vs 24/40 baseline. Ci sono state regressioni appaiate in tutti i confronti; fine-tuning DQN ha abbassato validation da 11/20 a 0/20.
-- Prossimo obiettivo: preservare le decisioni apprese per imitazione durante il fine-tuning e confrontare su seed indipendenti, senza promozione automatica.
+- Memoria episodica dell'adapter: retrieval contestuale per gioco con soglia di supporto/similarità e tie-break solo tra percorsi di costo uguale. Dieci ordini degli stessi 10 seed statici hanno dato 60/100 vittorie volatile e 58/100 persistenti; i blocchi e i turni medi calano con persistenza, ma non è isolato l'effetto dei casi dagli effetti appresi dei controlli. Vedi Esperimenti 30–31.
+- Replica statica più ampia: su 40 seed e 200 turni, volatile 40/40 vittorie contro 39/40 persistenti; persistente riduce blocchi e turni medi, ma la modalità combina retrieval episodico e apprendimento dei controlli. Vedi Esperimento 32.
+- Prossimo obiettivo: isolare il retrieval dalle prove dei controlli persistenti e valutarlo su più ordini di seed e sul protocollo da 200 turni.
 - Non implementati: acquisizione/percezione/input reali e trasferimento tra giochi.
 
 ## Fase 0 — Fondazione e struttura
@@ -75,6 +77,7 @@ Criteri di completamento:
 - la memoria distingue osservazione, ipotesi e conoscenze verificate;
 - lo stato del gioco è aggiornato in modo coerente;
 - gli errori non vengono automaticamente trasformati in regole.
+- retrieval episodico limitato all'adapter simulato, con contesto versionato, soglia di supporto e effetto conservativo sulle scelte a costo equivalente; resta da misurare il beneficio con ablation e benchmark estesi.
 
 ## Fase 6 — Pianificazione
 

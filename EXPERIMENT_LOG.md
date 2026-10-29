@@ -311,6 +311,44 @@ Documentare gli esperimenti, i risultati e le conclusioni in modo replicabile.
 - Conclusione/decisione: il terzo holdout non mostra aumento delle vittorie rispetto alla baseline né un saldo appaiato positivo. Il tempo medio per vittoria è inferiore, ma il punteggio complessivo è pressoché identico e ci sono sei regressioni. Nessuna promozione; mantenere baseline e checkpoint separati.
 - Follow-up: dare priorità alla conservazione dell'imitazione durante il fine-tuning DQN, misurando separatamente fedeltà alle decisioni esperte, vittorie e saldo appaiato su nuovi seed.
 
+### Esperimento 30 - Retrieval episodico conservativo nella policy di griglia
+
+- Data: 2026-10-29
+- Obiettivo: riutilizzare risultati di decisioni precedenti in contesti simili senza introdurre nuovo input, coordinamento parallelo o modificare il costo della pianificazione BFS.
+- Modifica: aggiunti casi episodici con schema contestuale versionato, reward derivato dall'esito, separazione per `game_id`, persistenza SQLite, cache di 2.000 casi e finestra di retrieval di 256 casi. Sono richiesti almeno due esempi per direzione e similarità almeno 0,65. Il planner usa il risultato solo a parità di costo; l'hint neurale usa il medesimo retrieval senza cambiare le 40 feature. Il benchmark registra metriche di retrieval.
+- Verifiche: suite completa, 64 test superati; benchmark smoke completato. I test coprono supporto minimo, contesti irrilevanti, schema/reward invalidi, limiti di cache/finestra, isolamento e ricaricamento per gioco, tie-break, outcome policy, hint neurale e metriche.
+- Metodo diagnostico: 10 seed appaiati per scenario, un ordine, massimo 100 turni (il protocollo di riferimento usa 40 seed e 200 turni). Gli stessi seed sono stati eseguiti in modalità volatile e persistente.
+- Scenario statico: volatile 6/10 vittorie, 0 sconfitte, 4 timeout, 71,4 turni medi; persistente 4/10, 0 sconfitte, 6 timeout, 73,4 turni medi; 2 esiti appaiati cambiati. Retrieval: volatile 714 query, 699 con match, 28.303 riferimenti a casi recuperati, 221 decisioni guidate; persistente 734 query, 730 con match, 148.244 riferimenti, 50 guidate, media 410,5 casi disponibili.
+- Scenario dinamico: volatile 2/10 vittorie, 0 sconfitte, 8 timeout, 92,5 turni medi; persistente 6/10, 0 sconfitte, 4 timeout, 76,9 turni medi; 6 esiti appaiati cambiati. Retrieval: volatile 925 query, 904 con match, 40.239 riferimenti a casi recuperati, 213 decisioni guidate; persistente 769 query, 767 con match, 149.228 riferimenti, 120 guidate, media 364,2 casi disponibili.
+- Interpretazione: il segnale osservato varia tra i due scenari e il campione è ridotto. La modalità persistente conserva sia casi episodici sia prove dei controlli, perciò il confronto non isola l'effetto causale del retrieval. Il numero di casi recuperati conta occorrenze attraverso le query, non casi unici.
+- Decisione: mantenere il retrieval come supporto conservativo dell'adapter, senza promuovere una nuova strategia né dichiarare un miglioramento.
+- Follow-up: ablation volatile/persistente con stato delle prove di controllo identico, più ordini di seed e massimo 200 turni; valutare vittorie, esiti appaiati, turni e metriche di retrieval separatamente.
+
+### Esperimento 31 - Sensibilità all'ordine del retrieval episodico statico
+
+- Data: 2026-10-29
+- Obiettivo: verificare se l'esito del confronto volatile/persistente cambia al variare dell'ordine con cui la memoria persistente accumula esperienze.
+- Metodo: `--scenario static --episodes 10 --max-turns 100 --sequences 10`, ordine base 9204. Ogni sequenza riusa i seed 0–9 in un ordine diverso; all'interno di ogni sequenza si valutano 10 episodi volatile e gli stessi 10 persistenti. Il database persistente viene azzerato tra sequenze. Totale: 200 episodi, 10 scenari distinti ripetuti in 10 ordini, non 100 seed indipendenti.
+- Volatile: 60/100 vittorie, 0 sconfitte, 40 timeout; 71,4 turni medi in ogni sequenza; 29 blocchi medi e 73 azioni senza movimento per ordine. La ripetizione volatile è identica perché gli episodi non riusano memoria tra partite.
+- Persistente: 58/100 vittorie, 0 sconfitte, 42 timeout; da 4 a 7 vittorie per sequenza; media dei turni per episodio 64,64; 3 blocchi medi e 8,3 azioni senza movimento per ordine.
+- Confronto appaiato: 26 esiti su 100 coppie seed/ordine sono cambiati. Poiché non ci sono sconfitte o stalli in nessuna condizione, l'aggregato equivale a 12 passaggi timeout→vittoria e 14 vittoria→timeout. Le coppie ripetono gli stessi 10 seed con ordini diversi e non sono 100 osservazioni indipendenti.
+- Retrieval: in media 221 decisioni guidate per ordine volatile e 100,8 persistenti. I riferimenti a casi recuperati sono occorrenze attraverso le query, non casi unici. Precisione direzionale riportata al 100% in entrambe le condizioni, su circa 600 campioni per ordine.
+- Interpretazione: la memoria persistente migliora nettamente il riuso dei controlli (meno blocchi e azioni senza movimento) e riduce i turni medi complessivi, ma non aumenta le vittorie aggregate: 58 contro 60. I risultati persistenti dipendono dall'ordine, con 4–7 successi per sequenza. Questo benchmark combina persistenza delle prove dei controlli e retrieval episodico, quindi non attribuisce gli effetti ai soli casi decisionali. Inoltre usa solo 10 seed e un limite di 100 turni.
+- Decisione: mantenere il sistema come supporto sperimentale senza promozione o affermazioni di superiorità sul tasso di vittoria.
+- Follow-up: aggiungere un confronto ablation che mantenga identiche le prove dei controlli e disattivi soltanto il retrieval episodico; usare seed di valutazione più numerosi e indipendenti, massimo 200 turni e confronto appaiato.
+
+### Esperimento 32 - Benchmark statico esteso dopo il retrieval episodico
+
+- Data: 2026-10-29
+- Obiettivo: verificare il comportamento statico con il protocollo completo del benchmark e più seed rispetto al run esplorativo da 10 episodi.
+- Metodo: benchmark comunicato dall'utente, `--scenario static --episodes 40 --max-turns 200 --sequences 1`; confronto appaiato volatile/persistente sullo stesso ordine di 40 seed. Una sola sequenza, quindi nessuna replica dell'ordine.
+- Volatile: 40/40 vittorie, 0 sconfitte, 0 timeout; 74,45 turni medi; 118 azioni bloccate; 179 azioni senza movimento; accuratezza predittiva 1,0; progresso distanza 1.125; coverage 0,509.
+- Persistente: 39/40 vittorie, 0 sconfitte, 1 timeout; 69,05 turni medi; 3 azioni bloccate; 6 azioni senza movimento; accuratezza predittiva 1,0; progresso distanza 1.115; coverage 0,526.
+- Esiti appaiati: `paired_outcomes_changed = 1`; l'unico cambiamento è una vittoria volatile diventata timeout persistente. Il campione non basta per concludere che esista un calo stabile di successo.
+- Interpretazione: forte riduzione dei blocchi e delle azioni senza movimento, con turni medi inferiori di circa il 7%; il tasso di vittoria non migliora (40/40 contro 39/40). Poiché la media dei turni include il timeout a 200, le 39 vittorie persistenti durano circa 65,7 turni in media (stima ricavata dagli aggregati), contro 74,45 per le 40 vittorie volatili: il dato suggerisce partite vinte più rapide ma non più affidabili. L'accuratezza predittiva perfetta è condivisa dalle due condizioni e non misura la qualità strategica. I numeri suggeriscono migliore riuso dei controlli, ma la modalità persistente include sia prove di controllo sia casi episodici: il loro contributo non è separabile in questo run.
+- Limiti: un solo ordine; risultati riportati in forma aggregata, senza traccia delle decisioni per seed; memoria persistente composta da più meccanismi. Il precedente test da 10 seed/100 turni ripeteva gli stessi 10 seed in più ordini e non è direttamente aggregabile con questo run.
+- Decisione/follow-up: nessuna promozione basata sul solo tasso di vittoria. Conservare il dato come evidenza di efficienza operativa e progettare l'ablation retrieval-on/off a memoria dei controlli identica, con log per decisione e seed appaiati.
+
 ## Registro da aggiornare
 
 Per ogni nuovo esperimento, aggiungere:

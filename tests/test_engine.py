@@ -87,3 +87,27 @@ def test_engine_records_observation_when_policy_declines_to_act() -> None:
     assert len(policy.observations) == 1
     assert executor.actions == []
     assert engine.memory.records == []
+
+
+def test_engine_run_stops_after_max_steps() -> None:
+    policy = RecordingPolicy()
+    executor = RecordingExecutor()
+    engine = GameEngine(policy, executor, max_steps=2)
+    engine.capture.set_frame({"hud": {"value": "frame"}})
+
+    engine.run()
+
+    assert len(policy.observations) == 2
+    assert len(executor.actions) == 2
+
+
+def test_engine_run_stops_when_should_stop_is_requested() -> None:
+    policy = RecordingPolicy()
+    executor = RecordingExecutor()
+    engine = GameEngine(policy, executor, should_stop=lambda: True)
+    engine.capture.set_frame({"hud": {"value": "frame"}})
+
+    engine.run()
+
+    assert len(policy.observations) == 0
+    assert len(executor.actions) == 0

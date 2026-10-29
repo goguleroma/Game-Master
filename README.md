@@ -86,6 +86,8 @@ Il codice specifico della griglia è confinato in `simulated_game/agent/` e `sim
 python -m simulated_game --seed 4
 ```
 
+L'adapter registra casi episodici con contesto osservabile, passo pianificato e risultato dell'azione. Recupera esempi simili solo per lo stesso gioco (similarità minima 0,65, almeno due esempi) e li usa come tie-break tra alternative BFS di costo uguale: la memoria non allunga il percorso ottimo né cambia il core. Il recupero consulta al massimo 256 casi recenti, con cache in RAM limitata a 2.000; il benchmark espone query, casi recuperati e decisioni guidate. È una capacità specifica della griglia: il piccolo confronto diagnostico corrente non ne dimostra ancora un beneficio e non implica trasferimento tra giochi. La policy neurale riusa l'hint del planner con la stessa codifica a 40 feature.
+
 Il test adapter include una prima ricerca evolutiva che genera e confronta varianti dei parametri di esplorazione su seed condivisi e le verifica su holdout indipendenti:
 
 ```powershell
@@ -152,10 +154,11 @@ python -m pytest tests/test_simulated_game.py
 ## Prossimi passi
 
 1. Continuare a sviluppare il core tramite contratti e componenti neutrali rispetto all'ambiente.
-2. Migliorare il test della ricerca di target dinamici esclusivamente nell'adapter simulato.
-3. Scegliere un ambiente reale consentito prima di implementare i relativi adapter di osservazione e input.
-4. Dimostrare il trasferimento tra ambienti con misure riproducibili prima di generalizzare le strategie.
-5. Valutare reti neurali soltanto dopo aver misurato un limite che i meccanismi attuali non risolvono.
+2. Isolare e valutare il contributo del retrieval episodico nell'adapter simulato su più ordini di seed e fino a 200 turni.
+3. Migliorare la ricerca di target dinamici solo sulla base di colli di bottiglia misurati.
+4. Scegliere un ambiente reale consentito prima di implementare i relativi adapter di osservazione e input.
+5. Dimostrare il trasferimento tra ambienti con misure riproducibili prima di generalizzare le strategie.
+6. Valutare reti neurali soltanto dopo aver misurato un limite che i meccanismi attuali non risolvono.
 
 ## Nota tecnica
 

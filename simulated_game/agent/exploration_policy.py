@@ -16,9 +16,22 @@ class ExplorationPolicy:
         self.action_manager = ActionManager()
         self.control_learner = ControlLearner()
         self._pending_step: tuple[tuple[int, int], tuple[int, int]] | None = None
+        self._pending_decision_case: tuple[
+            dict[str, object],
+            tuple[int, int],
+            tuple[int, int],
+            tuple[int, int] | None,
+        ] | None = None
 
     def observe_result(self, result: ActionResult, memory: GridMemoryStore) -> None:
         details = result.details
+        pending_case = self._pending_decision_case
+        self._pending_decision_case = None
+        if pending_case is not None:
+            context, direction, position, target = pending_case
+            record_outcome = getattr(memory, "record_decision_outcome", None)
+            if callable(record_outcome):
+                record_outcome(context, direction, position, target, details)
         self.control_learner.observe_action_result(details, memory)
         if (
             self._pending_step is not None
@@ -107,6 +120,18 @@ class ExplorationPolicy:
             if action is not None
             else None
         )
+        self._pending_decision_case = None
+        if (
+            state.grid_size is not None
+            and state.current_position is not None
+            and desired_direction is not None
+        ):
+            self._pending_decision_case = (
+                memory.build_decision_context(state, normalized_observation),
+                desired_direction,
+                state.current_position,
+                state.target_position,
+            )
         control = None
         if state.grid_size is None or desired_direction is not None:
             control = self.control_learner.choose(

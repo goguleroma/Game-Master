@@ -25,6 +25,8 @@
 - [x] Mappa parziale, esplorazione per frontiere e obiettivo recente fuori visuale.
 - [x] Invalidazione del target ricordato se osservato vuoto e recovery da passo bloccato.
 - [x] Ipotesi di mobilità del target ricavata da posizioni diverse osservate.
+- [x] Retrieval episodico contestuale nell'adapter, con supporto minimo e uso conservativo sui pareggi del planner.
+- [ ] Isolare e replicare il beneficio del retrieval con prove dei controlli identiche e benchmark a 200 turni.
 - [ ] Migliorare la ricerca del target mobile e la gestione di frontiere non raggiungibili, senza assumere le regole del simulatore.
 - [ ] Dimostrare vantaggio misurabile sul task dinamico contro la baseline.
 

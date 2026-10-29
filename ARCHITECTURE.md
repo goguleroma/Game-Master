@@ -32,6 +32,8 @@ Osservazione -> Stato -> Decisione -> Azione -> Verifica -> Esperienza -> Appren
 
 Tutto il comportamento della griglia di prova (simulatore, world model, planner BFS, policy, apprendimento dei controlli, memoria spaziale e input adapter) vive sotto `simulated_game/`. `simulated_game.runtime` compone questi componenti con il core per i test; il core non dipende da quel pacchetto. Un altro ambiente deve fornire i propri adapter senza aggiungere le sue regole al core.
 
+Nell'adapter a griglia, la memoria episodica associa un contesto osservabile e una direzione pianificata all'esito valutato dell'azione. SQLite separa i casi per gioco e versione dello schema; il retrieval è limitato a una finestra recente e richiede evidenza ripetuta. Il planner applica il segnale solo tra alternative di costo uguale. La policy neurale riceve l'azione suggerita dal planner tramite la codifica già esistente; il numero di feature non cambia. Il core generico non dipende da questo contratto specifico dell'adapter.
+
 `core.strategy_search` è un generatore indipendente dall'ambiente: riceve parametri numerici con limiti espliciti, seed e una funzione di valutazione fornita dal chiamante. Può selezionare, combinare e mutare varianti; è l'adapter a definire il significato dei parametri e il criterio di risultato.
 
 ### Central Agent

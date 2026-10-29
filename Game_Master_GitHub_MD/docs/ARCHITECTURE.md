@@ -22,6 +22,8 @@ Implementare soltanto i componenti necessari al primo percorso end-to-end.
 
 `core.GameEngine` riceve policy ed esecutore di azioni tramite dependency injection; può inoltre ricevere un adapter di osservazione. Il core registra esperienze con memoria generica e non contiene planner, coordinate, controlli o regole del simulatore. L'implementazione a griglia, inclusi world model e memoria spaziale, è confinata in `simulated_game/agent/` e `simulated_game/`, composta attraverso `simulated_game.runtime`. Il test simula un ambiente concreto ma non definisce l'architettura o la policy di GM.
 
+L'adapter a griglia aggiunge una memoria episodica per gioco: contesto osservabile, direzione pianificata e risultato con reward limitato. Il retrieval usa una finestra recente e supporto ripetuto; il planner lo applica solo tra scelte di costo equivalente. Questo non amplia il contratto del core né costituisce memoria trasferibile tra ambienti.
+
 ## Struttura suggerita
 ```text
 src/game_master/

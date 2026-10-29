@@ -47,6 +47,18 @@ Definire i test minimamente necessari per verificare che il sistema stia effetti
 
 Le prove delle regole della griglia sono confinate ai test dell'adapter in `tests/test_simulated_game.py`; i test del core non devono codificare obiettivi o controlli di alcun gioco.
 
+### 7.1 Memoria episodica e retrieval
+
+**Contesto:** registrare casi decisionali dall'osservazione e dall'esito di azioni dell'adapter simulato.
+
+**Risultato atteso:**
+- vengono salvati contesti conformi allo schema e reward finiti nell'intervallo `[-1, 1]`;
+- retrieval richiede almeno due esempi sufficientemente simili e non riusa casi di un altro `game_id`;
+- i casi persistenti vengono ricaricati, mentre cache e finestra di retrieval restano limitate;
+- la memoria influenza il planner soltanto tra alternative di costo uguale e il caso scelto è contabilizzato come decisione guidata;
+- il benchmark riporta query, query con match, riferimenti a casi recuperati, decisioni guidate e media dei casi disponibili;
+- l'hint della policy neurale usa il retrieval senza cambiare la dimensione dell'encoder.
+
 ### 7. Gioco simulato a griglia
 
 **Contesto:** il giocatore deve raggiungere l'obiettivo evitando un ostacolo.

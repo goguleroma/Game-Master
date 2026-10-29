@@ -147,6 +147,7 @@ def _play_episode(
         "predicted_movement_without_progress": (
             adapter.predicted_movement_without_progress
         ),
+        "retrieval": memory.retrieval_summary(),
     }
 
 
@@ -158,8 +159,19 @@ def _summarize(episodes: list[dict[str, Any]]) -> dict[str, Any]:
     )
     count = len(episodes)
     action_status_counts: Counter[str] = Counter()
+    retrieval_queries = 0
+    retrieval_queries_with_matches = 0
+    retrieved_cases = 0
+    memory_guided_decisions = 0
+    available_decision_cases = []
     for episode in episodes:
         action_status_counts.update(episode["action_status_counts"])
+        retrieval = episode["retrieval"]
+        retrieval_queries += retrieval["queries"]
+        retrieval_queries_with_matches += retrieval["queries_with_matches"]
+        retrieved_cases += retrieval["matched_cases"]
+        memory_guided_decisions += retrieval["guided_decisions"]
+        available_decision_cases.append(retrieval["available_cases"])
     return {
         "episodes": count,
         "wins": outcomes["win"],
@@ -218,6 +230,15 @@ def _summarize(episodes: list[dict[str, Any]]) -> dict[str, Any]:
             item["predicted_movement_without_progress"]
             for item in episodes
         ),
+        "memory_retrieval": {
+            "queries": retrieval_queries,
+            "queries_with_matches": retrieval_queries_with_matches,
+            "matched_cases": retrieved_cases,
+            "guided_decisions": memory_guided_decisions,
+            "mean_available_cases": round(
+                sum(available_decision_cases) / count, 2
+            ),
+        },
     }
 
 

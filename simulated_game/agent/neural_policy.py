@@ -36,11 +36,19 @@ class NeuralGridPolicy:
             dict[str, Any],
             dict[str, Any],
         ] | None = None
+        self._pending_memory_case: tuple[
+            dict[str, Any],
+            tuple[int, int],
+            tuple[int, int],
+            tuple[int, int] | None,
+        ] | None = None
+        self._last_planned_direction: tuple[int, int] | None = None
         self._novel_states: Counter[tuple[int, ...]] = Counter()
         self.losses: list[float] = []
 
     def begin_episode(self) -> None:
         self._pending = None
+        self._pending_memory_case = None
 
     def decide(self, observation: GameState, memory: GridMemoryStore) -> Action | None:
         normalized = self._normalize(observation)
@@ -76,6 +84,20 @@ class NeuralGridPolicy:
             mask,
             explore=self.training,
         )
+        state = self.world_model.state
+        if (
+            state.grid_size is not None
+            and state.current_position is not None
+            and self._last_planned_direction is not None
+        ):
+            self._pending_memory_case = (
+                memory.build_decision_context(state, normalized),
+                self._last_planned_direction,
+                state.current_position,
+                state.target_position,
+            )
+        else:
+            self._pending_memory_case = None
         self._pending = (
             features,
             action_index,
@@ -89,7 +111,21 @@ class NeuralGridPolicy:
         result: ActionResult,
         memory: GridMemoryStore,
     ) -> None:
-        if self._pending is None or not self.training:
+        pending_case = self._pending_memory_case
+        self._pending_memory_case = None
+        if pending_case is not None:
+            context, direction, position, target = pending_case
+            memory.record_decision_outcome(
+                context,
+                direction,
+                position,
+                target,
+                result.details,
+            )
+        if self._pending is None:
+            return
+        if not self.training:
+            self._pending = None
             return
         status = result.details.get("status")
         if status in {"goal_reached", "won", "caught", "lost"}:
@@ -200,6 +236,11 @@ class NeuralGridPolicy:
                     )
             if state.grid_size is not None:
                 memory.update_frontier(*state.grid_size)
+            memory.update_working_memory(
+                observation,
+                memory.working.last_action,
+                memory.working.last_result,
+            )
         width = grid.get("width", 1)
         height = grid.get("height", 1)
         position = state.current_position or (0, 0)
@@ -271,6 +312,7 @@ class NeuralGridPolicy:
         )
         action_index = self._previous_action_index(observation.get("controls", []), memory)
         planned_direction, intent_is_frontier = self._planning_hint(state, memory)
+        self._last_planned_direction = planned_direction
         direction_features = [
             float(planned_direction == direction)
             for direction in ((0, -1), (1, 0), (0, 1), (-1, 0))

@@ -12,5 +12,8 @@
 ## DEC-004 — Dati locali
 **Stato:** accettata. Nessuna trasmissione esterna senza approvazione esplicita.
 
+## DEC-005 — Retrieval episodico conservativo nell'adapter
+**Stato:** accettata per la simulazione. Memorizzare casi contestuali separati per gioco e consentirne l'uso soltanto come tie-break tra azioni di costo equivalente, con soglia di similarità e supporto minimo. Il piccolo run iniziale non prova un beneficio causale; prima di promuovere la policy serve un'ablation con prove dei controlli identiche e più seed.
+
 ## Decisioni pendenti
 Primo ambiente/task, sistema operativo, versione Python, gestore dipendenze, metodo input/cattura, storage, runtime modelli e limiti operativi. Per decisioni importanti annotare alternative, motivazione, conseguenze e condizioni di revisione.

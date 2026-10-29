@@ -17,3 +17,5 @@ def test_benchmark_reports_matched_outcomes_and_failure_metrics() -> None:
     assert sequence["persistent"]["timeouts"] == 2
     assert "blocked_by_boundary" in sequence["volatile"]["action_status_counts"]
     assert "prediction_accuracy" in sequence["persistent"]
+    assert sequence["volatile"]["memory_retrieval"]["queries"] == 2
+    assert "guided_decisions" in sequence["persistent"]["memory_retrieval"]
