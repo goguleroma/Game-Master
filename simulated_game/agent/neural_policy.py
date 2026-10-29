@@ -5,6 +5,7 @@ from typing import Any
 from core.types import Action, ActionResult, GameState
 from learning.dqn import DQNAgent
 from .memory import GridMemoryStore
+from .planner import Planner
 from .world_model import WorldModel
 
 
@@ -12,7 +13,8 @@ class NeuralGridPolicy:
     """Grid adapter for a learned Q-policy; the network sees observations, not game internals."""
 
     ACTION_COUNT = 6
-    FEATURE_COUNT = 35
+    FEATURE_COUNT = 40
+    PLANNED_DIRECTION_START = 31
 
     def __init__(
         self,
@@ -268,6 +270,11 @@ class NeuralGridPolicy:
             else (0.0, 0.0)
         )
         action_index = self._previous_action_index(observation.get("controls", []), memory)
+        planned_direction, intent_is_frontier = self._planning_hint(state, memory)
+        direction_features = [
+            float(planned_direction == direction)
+            for direction in ((0, -1), (1, 0), (0, 1), (-1, 0))
+        ]
         adjacent = ((0, -1), (1, 0), (0, 1), (-1, 0))
         values = [
             x / max(width - 1, 1),
@@ -302,6 +309,8 @@ class NeuralGridPolicy:
                 float(action_index == index)
                 for index in range(self.ACTION_COUNT)
             ],
+            *direction_features,
+            intent_is_frontier,
             *self._previous_result_features(memory),
         ]
         if len(values) != self.FEATURE_COUNT:
@@ -313,6 +322,27 @@ class NeuralGridPolicy:
         key = tuple(round(value * 20) for value in features)
         self._novel_states[key] += 1
         return features
+
+    @staticmethod
+    def _planning_hint(
+        state: Any,
+        memory: GridMemoryStore,
+    ) -> tuple[tuple[int, int] | None, float]:
+        if state.grid_size is None:
+            return None, 0.0
+        plan = Planner().choose_action(state, memory)
+        if plan is None:
+            return None, 0.0
+        direction = {
+            "move_up": (0, -1),
+            "move_right": (1, 0),
+            "move_down": (0, 1),
+            "move_left": (-1, 0),
+        }.get(plan.name)
+        intent_is_frontier = float(
+            direction is not None and plan.utility < 1.0
+        )
+        return direction, intent_is_frontier
 
     @staticmethod
     def _normalize(observation: GameState) -> dict[str, Any]:
@@ -385,6 +415,36 @@ class NeuralGridPolicy:
                 current_position[1] - current_target[1]
             )
             reward += max(-1, min(1, before_distance - after_distance)) * 0.2
+
+        if (
+            isinstance(previous_position, list)
+            and len(previous_position) == 2
+            and isinstance(current_position, list)
+            and len(current_position) == 2
+        ):
+            planned_direction_features = features[
+                self.PLANNED_DIRECTION_START : self.PLANNED_DIRECTION_START + 4
+            ]
+            if any(planned_direction_features):
+                planned_index = planned_direction_features.index(1.0)
+                planned_direction = (
+                    (0, -1),
+                    (1, 0),
+                    (0, 1),
+                    (-1, 0),
+                )[planned_index]
+                displacement = (
+                    current_position[0] - previous_position[0],
+                    current_position[1] - previous_position[1],
+                )
+                if displacement == planned_direction:
+                    reward += 0.2
+                elif displacement == (0, 0):
+                    reward -= 0.15 if str(result.get("status", "")).startswith(
+                        "blocked_"
+                    ) else 0.05
+                else:
+                    reward -= 0.1
         outcome = terminal or result.get("status")
         if outcome in {"goal_reached", "won"}:
             reward += 10.0

@@ -96,14 +96,14 @@ python -m simulated_game.strategy_search --scenario dynamic
 
 ### Esperimento neurale isolato
 
-La policy DQN è opzionale e confinata al simulatore. La baseline resta la modalità predefinita; il modello neurale non viene promosso né sostituisce la strategia baseline automaticamente. Per installare le dipendenze aggiuntive, addestrare un candidato e confrontarlo su seed held-out appaiati:
+La policy DQN è opzionale e confinata al simulatore. La baseline resta la modalità predefinita; il modello neurale non viene promosso né sostituisce la strategia baseline automaticamente. La codifica include un'indicazione di intent del planner (direzione BFS verso target/frontiera) e il reward misura il progresso rispetto a tale intent anche con target nascosto. Su due holdout indipendenti il best checkpoint per imitazione ha avuto piccoli vantaggi aggregati ma regressioni appaiate; il fine-tuning DQN ha degradato la validation, quindi non è stato promosso. Sono aiuti specifici dell'adapter a griglia, non capacità generaliste. La codifica cambia dimensione: i vecchi checkpoint non sono caricabili dalla nuova policy. Per installare le dipendenze aggiuntive, addestrare un candidato e confrontarlo su seed held-out appaiati:
 
 ```powershell
 python -m pip install -r requirements-neural.txt
 python -m simulated_game.neural_experiment --train-episodes 300 --holdout-episodes 40
 ```
 
-Il training riprende automaticamente il checkpoint `.gm-neural-training.pt` se presente; ogni avvio aggiunge gli episodi indicati a quelli precedenti e salva pesi, optimizer, replay buffer, RNG e contatori. Valuta ogni 50 episodi sullo stesso set di validation seed; il test finale usa seed separati e mai riutilizzati nelle riprese successive. Il miglior checkpoint secondo la validation viene conservato in `.gm-neural-training.best.pt`; il checkpoint latest permette di continuare il training. Per cominciare un esperimento indipendente, scegliere un percorso `--model` diverso e passare `--fresh`, per esempio `python -m simulated_game.neural_experiment --model .gm-neural-ablation.pt --fresh`.
+Il training riprende automaticamente il checkpoint `.gm-neural-training.pt` se presente; ogni avvio aggiunge gli episodi indicati a quelli precedenti e salva pesi, optimizer, replay buffer, RNG e contatori. Valuta ogni 50 episodi sullo stesso set di validation seed; il test finale usa seed separati e mai riutilizzati nelle riprese successive. Il miglior checkpoint secondo la validation viene conservato in `.gm-neural-training.best.pt`; il checkpoint latest permette di continuare il training. Per cominciare un esperimento indipendente, scegliere un percorso `--model` diverso e passare `--fresh`.
 
 Il report confronta vittorie, sconfitte, timeout, stalli, score e regressioni appaiate. La baseline non viene promossa o sostituita automaticamente. Il checkpoint migliore si può provare esplicitamente con `python -m simulated_game --policy neural --model .gm-neural-training.best.pt`. I vecchi checkpoint di soli pesi restano caricabili in inferenza, ma per riprendere da un nuovo training usare un percorso di checkpoint distinto. È un esperimento di reinforcement learning sul simulatore, non prova di ragionamento generale o trasferimento tra giochi.
 

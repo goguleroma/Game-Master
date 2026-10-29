@@ -262,6 +262,44 @@ Documentare gli esperimenti, i risultati e le conclusioni in modo replicabile.
 - Conclusione: warm-start migliora il tasso aggregato rispetto al checkpoint scratch selezionato (11 contro 6 vittorie) e riduce nettamente le sconfitte, ma resta peggiore della baseline e presenta numerose regressioni. Nessuna promozione; il checkpoint resta candidato sperimentale.
 - Follow-up: diagnosticare perché la policy perde informazione utile alla pianificazione e perché il reward di progresso non impedisce l'esposizione al nemico; non aumentare semplicemente gli episodi senza correggere/verificare queste cause. Ripetere solo dopo la modifica su nuovi holdout indipendenti.
 
+### Esperimento 26 - Diagnosi delle regressioni della policy neurale
+
+- Data: 2026-10-28
+- Obiettivo: distinguere un training insufficiente da problemi di rappresentazione, scelta delle azioni e reward.
+- Metodo: replay deterministico del checkpoint warm-start migliore, in sola inferenza, sugli stessi 40 seed held-out già usati nel confronto; misure d'azione raccolte senza aggiornare pesi. Confronto delle metriche baseline sugli stessi seed.
+- Esiti neurali: 11 vittorie, 3 sconfitte, 26 timeout su 40; 6.404 azioni. Nessun cambio di posizione in 1.214 azioni (18,9%); la baseline ha avuto 236 azioni senza movimento su 5.669 (4,2%). La rete ha selezionato `control_5` 598 volte e `control_6` 249 volte (13,2% delle decisioni), mentre la baseline percorre il planner soprattutto con controlli direzionali.
+- Distribuzione dei controlli neurali: `control_1` 2.423, `control_2` 638, `control_3` 2.442, `control_4` 54, `control_5` 598, `control_6` 249. La distribuzione è fortemente sbilanciata fra le direzioni; nei risultati è associata a molte azioni improduttive e non dimostra l'apprendimento di una navigazione robusta.
+- Esiti baseline sugli stessi seed: 24/40 vittorie, nessuna sconfitta; 5.409 mosse con posizione cambiata, 80 blocchi e 156 azioni completate senza movimento.
+- Diagnosi del codice: la baseline calcola un percorso BFS verso target/frontiera e traduce il passo in un controllo appreso; la rete sceglie direttamente fra tutti e sei i controlli, che restano sempre disponibili. L'encoder dà solo offset del target/frontiera, ostacoli adiacenti e conteggi di visita adiacenti; non comunica il passo BFS, un percorso, distanze alternative o la direzione prevista del nemico. I controlli di attacco/difesa sono quindi azioni ammissibili per la rete anche quando non servono.
+- Diagnosi del reward: il termine per avvicinarsi al target è applicato soltanto quando il target resta osservato nella stessa coordinata prima e dopo l'azione; nel task dinamico il target si sposta ogni due mosse e spesso è nascosto, perciò il segnale di progresso è raro. La curiosità di stato nuovo può invece premiare stati diversi senza indicare che ci si sta avvicinando alla vittoria; la penalità di sconfitta è terminale e tardiva.
+- Evidenza sul warm-start: prima del fine-tuning, l'imitazione baseline ha raggiunto solo 3/20 vittorie in validation contro 10/20 della baseline. Questo mostra che l'attuale codifica compatta non riproduce fedelmente il comportamento del planner, quindi non basta aumentare gli episodi DQN.
+- Conclusione: i dati sostengono limiti di rappresentazione e reward oltre alla quantità di training. Priorità: separare movimenti da azioni contestuali, aggiungere un segnale di distanza/progresso robusto ai target mobili e rendere osservabile il rischio dell'inseguitore; misurare prima la fedeltà all'imitazione su validation. Non implementare tutte le modifiche assieme: isolare gli interventi e rivalutare con seed indipendenti.
+- Limiti: l'analisi di azioni è un replay su un checkpoint e un singolo holdout; associazioni diagnostiche, non prova causale dell'effetto di una specifica modifica.
+
+### Esperimento 27 - Intent BFS esplicito nella rappresentazione neurale
+
+- Data: 2026-10-28
+- Obiettivo: testare isolatamente se esporre alla rete il suggerimento di movimento del planner rende più apprendibile la decisione baseline, lasciando invariato il reward.
+- Modifica: aggiunte quattro feature one-hot per la direzione del passo BFS suggerito e una feature che distingue l'esplorazione di frontiera; input passati da 35 a 40. Il planner condivide osservazioni e memoria spaziale già disponibile, senza leggere lo stato nascosto. Nuovo checkpoint separato e training da zero.
+- Imitazione iniziale: 100 episodi baseline su seed 8391–8490 hanno prodotto 12.321 esempi. La baseline demonstrator ha vinto 65/100. Loss media di imitazione 0,17863. Prima del fine-tuning, validation nuova 10/20 vittorie contro 13/20 baseline; nel precedente encoder da 35 feature l'imitazione era 3/20 contro 10/20 baseline.
+- Fine-tuning: 300 episodi, seed 8391–8690, 51.116 aggiornamenti DQN, loss media 0,07597. La validation è scesa a 2/20 vittorie al termine; il best checkpoint è rimasto quello dopo l'imitazione iniziale (10/20). Evidenza che l'attuale DQN/reward degrada il comportamento appreso dall'esperto.
+- Holdout A, seed 1008391–1008430: best candidate 24/40 vittorie, 0 sconfitte, 16 timeout, score 0,61756; baseline 26/40, 0 sconfitte, 14 timeout, score 0,66749. 8 miglioramenti e 10 regressioni appaiate.
+- Replicazione su holdout B indipendente, seed 1108391–1108430: candidato 24/40 vittorie, 0 sconfitte, 16 timeout, score 0,61988; baseline 26/40, 0 sconfitte, 13 timeout e 1 stallo, score 0,66333. 8 miglioramenti e 10 regressioni appaiate.
+- Conclusione: l'intent migliora nettamente l'imitazione e rende il candidato competitivo, senza evidenza che superi la baseline. Entrambi gli holdout confermano lo stesso scarto di due vittorie e il medesimo rapporto appaiato 8 miglioramenti/10 regressioni. Il DQN non ha migliorato il best BC, ma lo ha degradato in validation.
+- Decisione/follow-up: tenere la baseline come default e il modello come candidato. Il successivo intervento isolato riguarda il reward di progresso: usare il passo BFS pre-azione per assegnare feedback quando il target si muove o è nascosto; preservare il best checkpoint rispetto alla validation, poi valutare su un nuovo holdout mai usato.
+
+### Esperimento 28 - Reward di progresso guidato dall'intent BFS
+
+- Data: 2026-10-28
+- Obiettivo: verificare se un segnale di progresso basato sullo spostamento previsto dal planner migliora l'apprendimento quando il target è mobile o nascosto, lasciando invariata la rappresentazione a 40 feature.
+- Modifica: il reward usa l'intent BFS registrato prima dell'azione: premia lo spostamento allineato, penalizza uno spostamento contrario e distingue un'azione bloccata da un'azione senza progresso. Restano invariati i termini esistenti di curiosità, distanza dal target e risultato terminale. Test unitari coprono il progresso con target nascosto e il caso bloccato.
+- Metodo: 100 episodi baseline per imitazione (seed 9397–9496), 12.928 esempi e 5 epoche; poi 300 episodi DQN. Validation fissa su 20 seed 2009397–2009416. Miglior checkpoint selezionato prima del fine-tuning DQN; holdout finale A 1009397–1009436 e replica indipendente B 1109397–1109436, entrambi a 40 episodi e massimo 200 turni. Baseline e candidato valutati sugli stessi seed per ciascun holdout.
+- Imitazione/validation: la baseline dimostratrice ha vinto 61/100 episodi; loss di imitazione 0,17821. Il best checkpoint pre-DQN ha ottenuto 11/20 vittorie in validation contro 10/20 baseline (6 miglioramenti e 5 regressioni appaiate). A 300 episodi DQN, la validation è scesa a 0/20 contro 10/20 baseline (0 miglioramenti e 10 regressioni); il checkpoint best è quindi rimasto quello di sola imitazione.
+- Holdout A: candidato 23/40 vittorie, 0 sconfitte, 17 timeout, score medio 0,59378; baseline 21/40, 0 sconfitte, 19 timeout, score 0,54659. Esiti appaiati: 12 miglioramenti e 10 regressioni.
+- Holdout B indipendente: candidato 27/40 vittorie, 0 sconfitte, 13 timeout, score medio 0,69265; baseline 26/40, 0 sconfitte, 14 timeout, score 0,66522. Esiti appaiati: 8 miglioramenti e 7 regressioni.
+- Conclusione/decisione: i due holdout mostrano un piccolo vantaggio aggregato del candidato (23 contro 21 e 27 contro 26 vittorie), ma in entrambi si osservano regressioni appaiate; il criterio conservativo di promozione non è soddisfatto. Il progresso guidato dall'intent non ha impedito il collasso della policy durante il fine-tuning DQN. Il candidato resta opzionale e la baseline resta invariata.
+- Limiti/follow-up: il risultato è circoscritto alla griglia e a un solo checkpoint di imitazione; i vantaggi aggregati sono piccoli e non equivalgono a una superiorità dimostrata. Il prossimo esperimento dovrebbe evitare di degradare l'imitazione, ad esempio controllando il fine-tuning DQN o preservando esplicitamente le azioni dell'esperto, e mantenere nuovi seed per la valutazione.
+
 ## Registro da aggiornare
 
 Per ogni nuovo esperimento, aggiungere:

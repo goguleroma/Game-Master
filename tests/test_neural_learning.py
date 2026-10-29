@@ -137,6 +137,87 @@ def test_neural_policy_encodes_observations_and_updates_spatial_memory() -> None
     assert memory.spatial.frontier
 
 
+def test_neural_features_include_planner_direction_intent() -> None:
+    observed_directions = []
+    for seed, target in ((21, (0, 0)), (22, (1, 1))):
+        game = GridGame(seed=seed, moving_target=False, pursuer_enabled=False)
+        game.target = target
+        frame = game.observe()
+        observation = GameState(
+            objects=frame["objects"],
+            hud=frame["hud"],
+            goal=frame["goal"],
+            confidence=frame["confidence"],
+            controls=frame["controls"],
+        )
+        policy = NeuralGridPolicy(seed=seed)
+        features = policy._encode(
+            policy._normalize(observation),
+            GridMemoryStore(),
+        )
+        observed_directions.append(features[-9:-5])
+        assert features[-5] == 0.0
+
+    assert observed_directions == [
+        (1.0, 0.0, 0.0, 0.0),
+        (0.0, 1.0, 0.0, 0.0),
+    ]
+
+
+def test_neural_reward_tracks_planner_progress_when_target_is_hidden() -> None:
+    policy = NeuralGridPolicy(seed=23)
+    before = {
+        "hud": {
+            "health": 10,
+            "grid": {
+                "position": [5, 5],
+                "visible_cells": [],
+                "target": None,
+            },
+        }
+    }
+    aligned_after = {
+        "hud": {
+            "health": 10,
+            "grid": {
+                "position": [5, 4],
+                "visible_cells": [],
+                "target": None,
+            },
+        }
+    }
+    stalled_after = {
+        "hud": {
+            "health": 10,
+            "grid": {
+                "position": [5, 5],
+                "visible_cells": [],
+                "target": None,
+            },
+        }
+    }
+    features = [0.0] * policy.FEATURE_COUNT
+    features[policy.PLANNED_DIRECTION_START] = 1.0
+    feature_tuple = tuple(features)
+
+    aligned_reward = policy._reward(
+        before,
+        aligned_after,
+        feature_tuple,
+        {"status": "moved"},
+    )
+    stalled_reward = policy._reward(
+        before,
+        stalled_after,
+        feature_tuple,
+        {"status": "blocked_by_boundary"},
+    )
+
+    assert aligned_reward > stalled_reward
+    assert aligned_reward == pytest.approx(0.43)
+    assert stalled_reward == pytest.approx(0.08)
+
+
 def test_neural_experiment_smoke_saves_unpromoted_candidate(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

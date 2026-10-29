@@ -82,7 +82,7 @@ Il progetto ha un core di orchestrazione indipendente dall'ambiente e un adapter
 
 ## Prossima azione
 
-Ampliare le varianti strategiche misurabili e ripetere l'holdout dinamico con più seed: il primo candidato ha aumentato le vittorie aggregate, ma ha anche invertito sei esiti appaiati e per questo non è stato promosso.
+Per la policy neurale, verificare un fine-tuning che preservi il comportamento appreso per imitazione: nel test corrente il DQN ha portato la validation da 11/20 a 0/20. Mantenere baseline e split held-out intatti; non promuovere il candidato finché non mostra un vantaggio appaiato replicabile senza regressioni.
 
 ## Esperimento neurale in corso
 
@@ -91,5 +91,9 @@ Ampliare le varianti strategiche misurabili e ripetere l'holdout dinamico con pi
 - Conserva checkpoint latest riprendibile e miglior checkpoint validation; la baseline non viene sostituita automaticamente.
 - Il training completo da zero (300 episodi) è stato nettamente peggiore nell'holdout: il checkpoint best ha fatto 6/40 vittorie e 1 sconfitta, contro 24/40 vittorie e zero sconfitte baseline; 20 regressioni e 2 miglioramenti appaiati. Nessuna promozione.
 - Warm-start con 100 episodi baseline, 13.979 esempi, 5 epoche di imitazione e 300 episodi DQN: checkpoint best 11/40 vittorie e 3 sconfitte, contro 24/40 e 0 baseline; 17 regressioni e 4 miglioramenti appaiati. Migliora lo scratch, ma non raggiunge la baseline e non è promosso.
+- Aggiunta al singolo test della rappresentazione una direzione BFS one-hot e un flag di intent frontier (input 40). Imitazione su validation: 10/20 contro 3/20 con vecchia codifica. Best checkpoint su due holdout indipendenti: 24/40 vittorie entrambe le volte contro baseline 26/40; nessuna sconfitta, ma 10 regressioni contro 8 miglioramenti appaiati. Il fine-tuning DQN ha peggiorato validation e non ha sostituito il best BC.
+- Aggiunto un reward di progresso basato sull'intent BFS pre-azione, valido anche con target nascosto. Con 100 episodi di imitazione, il best checkpoint ha ottenuto 11/20 vittorie validation contro 10/20 baseline; dopo 300 episodi DQN è sceso a 0/20, quindi il best è rimasto il checkpoint BC.
+- Su due holdout indipendenti, il checkpoint BC con reward di progresso ha fatto 23/40 contro 21/40 e 27/40 contro 26/40 vittorie; rispettivamente 12 miglioramenti/10 regressioni e 8/7 appaiati. Piccolo vantaggio aggregato, ma regressioni presenti su entrambi: non è una superiorità ripetibile e il candidato non è promosso.
+- Diagnosi iniziale sul precedente holdout: nessun avanzamento nel 18,9% delle decisioni neurali contro 4,2% baseline; 13,2% azioni attacco/difesa. Il segnale di progresso è ora testato, ma non risolve il collasso osservato nel fine-tuning DQN.
 - Test specifici coprono maschere, decadimento epsilon, training state round-trip, ripresa tra invocazioni, imitazione supervisionata e valutazione appaiata.
 - La policy non dimostra ragionamento generale, obiettivi semantici autonomi o trasferimento tra giochi.
