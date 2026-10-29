@@ -300,6 +300,17 @@ Documentare gli esperimenti, i risultati e le conclusioni in modo replicabile.
 - Conclusione/decisione: i due holdout mostrano un piccolo vantaggio aggregato del candidato (23 contro 21 e 27 contro 26 vittorie), ma in entrambi si osservano regressioni appaiate; il criterio conservativo di promozione non è soddisfatto. Il progresso guidato dall'intent non ha impedito il collasso della policy durante il fine-tuning DQN. Il candidato resta opzionale e la baseline resta invariata.
 - Limiti/follow-up: il risultato è circoscritto alla griglia e a un solo checkpoint di imitazione; i vantaggi aggregati sono piccoli e non equivalgono a una superiorità dimostrata. Il prossimo esperimento dovrebbe evitare di degradare l'imitazione, ad esempio controllando il fine-tuning DQN o preservando esplicitamente le azioni dell'esperto, e mantenere nuovi seed per la valutazione.
 
+### Esperimento 29 - Terzo holdout e confronto dei checkpoint neurali
+
+- Data: 2026-10-29
+- Obiettivo: replicare il confronto neural-vs-baseline su seed mai usati e confrontare direttamente i checkpoint con intent BFS e con reward di progresso.
+- Metodo: stessi 40 seed 1209397–1209436, massimo 200 turni per episodio; baseline e i due checkpoint best valutati sugli stessi seed. Nessun aggiornamento dei pesi durante l'inferenza.
+- Baseline: 24/40 vittorie, 0 sconfitte, 15 timeout e 1 stallo; score medio 0,61745 e 95,25 turni medi per vittoria.
+- Checkpoint intent BFS: 24/40 vittorie, 0 sconfitte e 16 timeout; score 0,61867 e 78,5 turni medi per vittoria. Rispetto alla baseline: 6 esiti migliorati e 6 peggiorati.
+- Checkpoint reward di progresso: stessi esiti discreti del checkpoint intent su questo holdout (24/40 vittorie, 0 sconfitte, 16 timeout; score 0,61867; 78,5 turni medi per vittoria), con 6 miglioramenti e 6 regressioni appaiati rispetto alla baseline. I file dei checkpoint e i pesi sono distinti; l'uguaglianza osservata riguarda gli esiti e le metriche aggregate su questi seed, non i modelli.
+- Conclusione/decisione: il terzo holdout non mostra aumento delle vittorie rispetto alla baseline né un saldo appaiato positivo. Il tempo medio per vittoria è inferiore, ma il punteggio complessivo è pressoché identico e ci sono sei regressioni. Nessuna promozione; mantenere baseline e checkpoint separati.
+- Follow-up: dare priorità alla conservazione dell'imitazione durante il fine-tuning DQN, misurando separatamente fedeltà alle decisioni esperte, vittorie e saldo appaiato su nuovi seed.
+
 ## Registro da aggiornare
 
 Per ogni nuovo esperimento, aggiungere:

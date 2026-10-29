@@ -46,7 +46,7 @@ Questa è ricerca evolutiva di parametri, non una rete neurale e non generazione
 
 ## Esperimento neurale isolato
 
-La policy DQN è opzionale e non sostituisce la baseline. La codifica include un suggerimento del planner (una direzione BFS verso il target o una frontiera), e il reward misura anche se lo spostamento osservato segue tale intent quando il target è nascosto o mobile. Queste feature sono locali all'adapter della griglia e cambiano la dimensione di input: i precedenti checkpoint non sono compatibili. L'esperimento corrente ha mostrato piccoli vantaggi aggregati dell'imitazione su due holdout, ma anche regressioni appaiate; il fine-tuning DQN ha degradato la validation, quindi nessuna promozione è stata fatta. Installare le dipendenze aggiuntive, addestrare un candidato e confrontarlo con la baseline:
+La policy DQN è opzionale e non sostituisce la baseline. La codifica include un suggerimento del planner (una direzione BFS verso il target o una frontiera), e il reward misura anche se lo spostamento osservato segue tale intent quando il target è nascosto o mobile. Queste feature sono locali all'adapter della griglia e cambiano la dimensione di input: i precedenti checkpoint non sono compatibili. Su tre holdout, il checkpoint per imitazione ha avuto piccoli vantaggi aggregati nei primi due e un pareggio nelle vittorie sul terzo, ma regressioni appaiate in tutti; il fine-tuning DQN ha degradato la validation, quindi nessuna promozione è stata fatta. Installare le dipendenze aggiuntive, addestrare un candidato e confrontarlo con la baseline:
 
 ```powershell
 python -m pip install -r requirements-neural.txt

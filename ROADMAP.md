@@ -1,13 +1,14 @@
 # ROADMAP.md
 
-## Stato verificato al 2026-10-28
+## Stato verificato al 2026-10-29
 
 - Core generico con policy/esecutore iniettati; agent e memoria spaziale della griglia confinati nell'adapter simulato.
 - Ciclo end-to-end simulato, apprendimento di sei controlli anonimi, memoria persistente e test dell'adapter: presenti.
 - Task statico: 40/40 vittorie con memoria volatile e persistente nei tre ordini valutati; la persistenza riduce i turni medi.
 - Task dinamico: in un ordine da 40 seed, 25 vittorie volatile contro 22 persistenti; non è dimostrato un beneficio di vittorie.
 - Ricerca strategica: 14 varianti valutate; il migliore ha fatto 10/20 vittorie held-out contro 8/20 baseline, ma con 6 regressioni appaiate, quindi non promosso.
-- Prossimo obiettivo: ampliare lo spazio strategico e le repliche held-out per target mobili, senza promuovere candidati con regressioni.
+- Policy neurale: intent BFS e reward di progresso sono testati; su tre holdout il checkpoint progress ha ottenuto 23/40 vs 21/40, 27/40 vs 26/40 e 24/40 vs 24/40 baseline. Ci sono state regressioni appaiate in tutti i confronti; fine-tuning DQN ha abbassato validation da 11/20 a 0/20.
+- Prossimo obiettivo: preservare le decisioni apprese per imitazione durante il fine-tuning e confrontare su seed indipendenti, senza promozione automatica.
 - Non implementati: acquisizione/percezione/input reali e trasferimento tra giochi.
 
 ## Fase 0 — Fondazione e struttura
