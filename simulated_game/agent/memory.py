@@ -99,7 +99,9 @@ class GridMemoryStore:
         self,
         game_id: Optional[str] = None,
         database_path: Optional[str | Path] = None,
+        enable_episodic_retrieval: bool = True,
     ) -> None:
+        self.enable_episodic_retrieval = enable_episodic_retrieval
         self.short_term = ShortTermMemory()
         self.working = WorkingMemory()
         self.spatial = SpatialMemory()
@@ -476,6 +478,10 @@ class GridMemoryStore:
         minimum_support: int = 2,
     ) -> Dict[Position, float]:
         """Retrieve similar past cases and return confidence-weighted rewards."""
+        if not self.enable_episodic_retrieval:
+            # Ablation switch: episodic retrieval is disabled for this run and
+            # no prior case may steer the decision.
+            return {}
         if not 0.0 <= minimum_similarity <= 1.0:
             raise ValueError("minimum_similarity must be between 0 and 1")
         if minimum_support < 1:

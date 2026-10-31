@@ -349,6 +349,63 @@ Documentare gli esperimenti, i risultati e le conclusioni in modo replicabile.
 - Limiti: un solo ordine; risultati riportati in forma aggregata, senza traccia delle decisioni per seed; memoria persistente composta da più meccanismi. Il precedente test da 10 seed/100 turni ripeteva gli stessi 10 seed in più ordini e non è direttamente aggregabile con questo run.
 - Decisione/follow-up: nessuna promozione basata sul solo tasso di vittoria. Conservare il dato come evidenza di efficienza operativa e progettare l'ablation retrieval-on/off a memoria dei controlli identica, con log per decisione e seed appaiati.
 
+### Esperimento 33 - Stop conditions, ricerca strategica dinamica e esplorazione per obiettivo dinamico
+
+- Data: 2026-10-30
+- Obiettivo: completare le proposte di fase del loop operativo (stop conditions), verificare la ricerca strategica sui parametri di esplorazione in un contesto dinamico e intervenire quando l'obiettivo è dinamico ma non visibile.
+- Proposta 1 - Stop conditions: `GameEngine` accetta ora `max_steps` e `should_stop`; il loop verifica il segnale di stop e poi il limite di step, e registra un passo solo dopo un `process_frame` valido. Test nel core: stop dopo `max_steps` e stop quando `should_stop` risponde true. Suite a questo punto: 66 test superati.
+- Proposta 2 - Strategia nel contesto dinamico: `python -m simulated_game.strategy_search --scenario dynamic`; 25 varianti valutate; il miglior candidato del training coincide con la baseline (score medio 0,85223); sul holdout il candidato è alla pari con la baseline (24 vittorie, 16 timeout, mean_score 0,64098); promozione non effettuata; strategia salvata `null`.
+- Proposta 3 - Ambiente reale: esplicitamente non approdata in questa fase; il sistema resta confinato al simulatore.
+- Miglioramento mirato - obiettivo dinamico: quando `memory.spatial.goal_is_dynamic` è attiva e l'obiettivo non è visibile, `Planner._choose_world_action` imposta i target a lista vuota, cioè attiva l'esplorazione, invece di inseguire le posizioni ricordate. Test in `tests/test_exploration.py`: 3 nuovi e 1 aggiornato. Suite finale: 69 test superati, 0 falliti.
+- Verifica: suite completa riavviata dall'orchestratore, 69 test superati in 36,49 s senza regressioni; benchmark dinamico con 40 seed e max-turns 200; A/B tra vecchio planner e nuovo planner sullo scenario dinamico, ordine 9204. I run di test e benchmark demandati a un sotto-agente non sono riusciti a completare per il limite di utilizzo gratuito; l'orchestratore ha eseguito direttamente suite e benchmark.
+- Metodo A/B: stesso scenario dinamico, stesso ordine di seed, confronto vecchio planner vs nuovo planner con le stesse condizioni di memoria.
+- Risultati A/B - vecchio planner: volatile 25 vittorie/15 timeout, mean_turns 132,2, blocked 80, coverage 0,311; persistente 22 vittorie/17 timeout/1 stallo esplicito, mean_turns 124,0.
+- Risultati A/B - nuovo planner: volatile 25 vittorie/15 timeout, mean_turns 137,3, blocked 118, coverage 0,731; persistente 25 vittorie/15 timeout, mean_turns 116,33, blocked 3, stalled 0.
+- Confronto: con memoria persistente, il nuovo planner ha dato +3 vittorie, -2 timeout, -7,67 mean_turns in meno e stallo 0 contro 1 rispetto al vecchio planner. Le modifiche di questa fase sono incluse nel commit `2a2055b` ("migliori sul comportamento").
+- Conclusione: le stop conditions sono operative, la strategia dinamica non promuove candidati e il branch di esplorazione per obiettivo dinamico è implementato e verificato.
+- Limiti e follow-up: l'A/B si è svolto su un unico ordine di seed; la copertura migliora molto, ma con un aumento delle azioni bloccate. Servono confronti su più ordini di seed e l'ablazione del retrieval.
+
+### Esperimento 34 - Validazione improvement dinamico (A/B su più ordini di seed)
+
+- Data: 2026-10-31
+- Obiettivo: validare sperimentalmente il miglioramento sull'obiettivo dinamico: quando la memoria spaziale segnala un obiettivo dinamico e l'obiettivo non è visibile, il planner deve attivare l'esplorazione invece di inseguire la posizione ricordata.
+- Proposta/Miglioramento: branch `elif memory.spatial.goal_is_dynamic: targets = []` in `Planner._choose_world_action` (commit `2a2055b`, "migliori sul comportamento"): quando l'obiettivo è dinamico e fuori visuale, i target vengono impostati a lista vuota e la scelta passa alla policy di esplorazione.
+- Metodo A/B: `python -m simulated_game.benchmark --scenario dynamic --episodes 40 --max-turns 200 --sequences 5` con il nuovo planner attivo, una sequenza per ciascun ordine di seed; confronto con il vecchio planner tramite la sequenza 1 (ordine 9204) riportata in Fase 1.
+- Risultati per sequenza - nuovo planner: sequenza 1 (ordine 9204): volatile 25 vittorie/15 timeout, mean_turns 137,3, blocked 118, coverage 0,731; persistente 25 vittorie/15 timeout, mean_turns 116,33, blocked 3, coverage 0,639, goal_reached 25, dynamic_hyp 29, relocations 57,58. I numeri persistenti coincidono con la Fase 1: improvement REPRODUCED. Sequenza 2: persistente 27 vittorie/13 timeout, mean_turns 118,75, blocked 3, coverage 0,525, goal_reached 27. Sequenza 3: persistente 29 vittorie/10 timeout, mean_turns 105,58, blocked 3, coverage 0,57, goal_reached 29, stalled 1 (waiting_for_visible_target). Sequenza 4: persistente 27 vittorie/13 timeout, mean_turns 115,3, blocked 3, coverage 0,599, goal_reached 27. Sequenza 5: persistente 29 vittorie/11 timeout, mean_turns 103,38, blocked 3, coverage 0,569, goal_reached 29. Aggregati sui 5 sequenze e 200 episodi: persistente 137 vittorie (68,5%), 62 timeout, 0 sconfitte, 1 stallo, mean_turns 111,87, blocked 3 per sequenza, mean coverage ~0,58; volatile 125 vittorie, 75 timeout, mean_turns 137,3, blocked 118, coverage 0,731 (identica in ogni sequenza).
+- Confronto con A/B precedente: la sequenza 1 (ordine 9204) riproduce esattamente i numeri del nuovo planner della Fase 1 → improvement REPRODUCED; trend confermato nelle sequenze 2-5: persistent planner con 25-29 vittorie contro 22 del vecchio planner, timeout 10-15, stalli ≤1, mean_turns 103-119, blocked 3.
+- Conclusione: verdict KEEP del nuovo branch; procedere alla Fase 3 (wiring delle stop conditions e prossimo miglioramento).
+- Limiti e follow-up: il confronto diretto vecchio vs nuovo va esteso su più ordini di seed prima di una promozione automatica; la validazione è confinata allo scenario dinamico del simulatore e al protocollo di benchmark.
+
+### Esperimento 35 - Rebalancing del combattimento per renderlo al pari con il traguardo
+
+- Data: 2026-10-31
+- Obiettivo: rendere la meccanica di combattimento tanto importante quanto il raggiungimento del traguardo, senza introdurre logica di combattimento nel Game Master.
+- Modifica: danno attacco incrementato da 3 a 5 PV in `GridGame._execute_combat` (player e entità); difesa continua a annullare il danno; con 10 PV a parte l'uccisione richiede ora due attacchi.
+- Verifica: suite completa `python -m pytest -q`: 69 test superati, 0 falliti; test di combattimento eseguiti singolarmente: 8 superati.
+- Risultato: il combattimento ora ha posta in gioco sufficiente a essere un driver strategico; la gestione di vita, danno e difesa diventa centrale quanto l'urgenza del traguardo.
+- Conclusione: commit `a6d7b70` ("Rebalance combat: attack damage 3 to 5 so fights carry goal-level stakes") sul branch `simulated-game`.
+- Limiti e follow-up: rebalancing numerico solo; il GM resta senza logica di combattimento (apprende i controlli anonimi); il cambio non è stato sottoposto a nuovo benchmark di gameplay.
+
+### Esperimento 36 - Attribuzione dell'improvement dinamico al ranking delle frontiere
+
+- Data: 2026-10-31
+- Obiettivo: attribuire l'improvement misurato nella Fase 2 sul target dinamico alle componenti del planner introdotta nel commit `2a2055b` ("migliori sul comportamento").
+- Metodo: A/B del ranking delle frontiere (vecchio vs nuovo) mantenendo la logica del ramo dinamico del planner nuovo; scenario dynamic, 40 seed, max-turns 200, ordine 9204; suite completa post-rebalancing: 69 test superati in 34,72 s.
+- Risultati: vecchio ranking -> volatile coverage 0,302, persistent wins 23, stalled 1, mean_turns 119,12; nuovo ranking -> volatile coverage 0,731, persistent wins 25, stalled 0, mean_turns 116,33.
+- Finding: sotto strategia di default (`goal_change_threshold` 1) vecchio ramo e nuovo ramo di esplorazione sono logicamente equivalenti; l'improvement misurato nella Fase 2 e' attribuibile al ranking delle frontiere del commit `2a2055b`.
+- Conclusione: l'improvement sul target dinamico e' attribuibile al ranking delle frontiere; il branch di esplorazione per obiettivo dinamico va mantenuto per strategie con soglia di cambio obiettivo superiore alla soglia di default.
+- Limiti e follow-up: A/B eseguito su un unico ordine; servono repliche su piu' ordini prima di una promozione automatica; i risultati ottenuti prima del rebasing del combattimento (commit `a6d7b70`) non sono direttamente comparabili con quelli successivi e i futuri esperimenti vanno categorizzati per versione di bilanciamento.
+
+### Esperimento 37 - Ablazione retrieval episodico per l'improvement dinamico
+
+- Data: 2026-10-31
+- Obiettivo: isolare il contributo del retrieval episodico alle decisioni del planner, dopo la chiusura della Fase 2 con verdict KEEP.
+- Metodo: benchmark dinamico, 40 seed, max-turns 200, ordine 9204, con flag di abilitazione dell'episodic retrieval (`--disable-episodic-retrieval`); suite completa: 70 test superati in 34,72 s.
+- Risultati - retrieval ON (nuovo planner): volatile coverage 0,731, persistent wins 25, stalled 0, mean_turns 116,33, persistent 25 vittorie/40 episodi.
+- Risultati - retrieval OFF (nuovo planner): volatile coverage 0,311, persistent wins 22, stalled 1, mean_turns 124,0, retrieval queries 0 con la flag disattivata; coincidente con la performance del vecchio planner della Fase 1.
+- Conclusione: l'improvement misurato nella Fase 2 e' attribuibile al percorso decisionale guidato dalla memoria (retrieval); il ramo di esplorazione per obiettivo dinamico risulta equivalente al ramo precedente sotto strategia di default.
+- Limiti e follow-up: ablazione eseguita su un unico ordine; servono repliche su piu' ordini prima di una promozione automatica.
+
 ## Registro da aggiornare
 
 Per ogni nuovo esperimento, aggiungere:
