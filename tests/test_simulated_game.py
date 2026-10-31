@@ -471,7 +471,7 @@ def test_an_attacking_entity_is_not_damaged_when_it_defends() -> None:
     assert result.details == {"status": "completed"}
 
 
-def test_combat_attacks_deal_three_damage() -> None:
+def test_combat_attacks_deal_five_damage() -> None:
     game = GridGame(seed=42)
     game.position = (1, 1)
     game.enemy_position = (2, 1)
@@ -479,8 +479,8 @@ def test_combat_attacks_deal_three_damage() -> None:
     with patch.object(game, "_enemy_combat_choice", return_value="attack"):
         game.execute(Action(name="control_5"))
 
-    assert game.player_health == 7
-    assert game.enemy_health == 7
+    assert game.player_health == 5
+    assert game.enemy_health == 5
 
 
 def test_player_attack_can_remove_entity_as_a_regular_obstacle() -> None:
@@ -489,7 +489,7 @@ def test_player_attack_can_remove_entity_as_a_regular_obstacle() -> None:
     game.enemy_position = (2, 1)
     game.obstacles = {(9, 9)}
     with patch.object(game, "_enemy_combat_choice", return_value="attack"):
-        for _ in range(4):
+        for _ in range(2):
             game.enemy_position = (2, 1)
             game.execute(Action(name="control_5"))
 
