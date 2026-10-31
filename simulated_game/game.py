@@ -203,9 +203,9 @@ class GridGame:
         enemy_action = self._enemy_combat_choice()
 
         if player_action == "attack" and enemy_action != "defend":
-            self.enemy_health -= 3
+            self.enemy_health -= 5
         if enemy_action == "attack" and player_action != "defend":
-            self.player_health -= 3
+            self.player_health -= 5
 
         enemy_attacked = enemy_action == "attack"
         if self.player_health <= 0:
