@@ -81,7 +81,7 @@ Le prove delle regole della griglia sono confinate ai test dell'adapter in `test
 - il gioco segnala la vittoria solo quando il giocatore raggiunge l'obiettivo;
 - il nemico si attiva quando il giocatore entra nel raggio di 4 caselle e lo insegue;
 - il nemico è esposto al planner usando il campo ostacoli esistente, senza un campo dedicato;
-- giocatore ed entità partono da 10 PV; ogni attacco infligge 3 PV e la difesa annulla il danno;
+- giocatore ed entità partono da 10 PV; ogni attacco infligge 5 PV e la difesa annulla il danno;
 - l'osservazione espone i PV senza etichette o istruzioni di combattimento;
 - l'osservazione espone i sei controlli opachi senza la loro corrispondenza semantica;
 - il planner indica un passo verso obiettivo/frontiera e il learner, dopo aver osservato gli effetti, seleziona il controllo anonimo che realizza lo spostamento desiderato;
