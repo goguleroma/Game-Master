@@ -95,3 +95,11 @@
 **Motivazione:** l'A/B del ranking (vecchio vs nuovo) con la logica del ramo dinamico mantenuta ha mostrato una coverage volatile da 0,302 a 0,731 e una delta di wins persistenti; l'equivalenza vecchio/nuovo planner sotto strategia di default ha escluso il ramo dinamico come fonte unica dell'improvement.
 
 **Conseguenze:** il ramo di esplorazione per obiettivo dinamico va mantenuto per strategie con soglia di cambio obiettivo superiore alla soglia di default; l'attribuzione dell'improvement passa al ranking delle frontiere come variabile principale da valutare nella fase successiva.
+
+## Decisione 13 - Attribution finale dell'improvement dinamico al percorso guidato dalla memoria
+
+**Decisione:** l'improvement misurato nella Fase 2 sul target dinamico e' attribuibile al percorso decisionale guidato dalla memoria (retrieval episodico) introdotto nel commit `2a2055b`; il ramo di esplorazione per obiettivo dinamico risulta equivalente al ramo precedente sotto strategia di default.
+
+**Motivazione:** l'ablazione retrieval-on/off con il nuovo planner ha mostrato risultati coincidenti con il vecchio planner quando il retrieval e' disattivato (coverage volatile 0,311, wins persistenti 22), mentre con retrieval attivo (flag on) il nuovo planner produce coverage 0,731 e wins 25.
+
+**Conseguenze:** la validazione sperimentale resta sul planner nuovo con retrieval attivo; la fase successiva deve replicare l'ablazione su piu' ordini e valutare l'integrazione del ranking delle frontiere nello stesso percorso.

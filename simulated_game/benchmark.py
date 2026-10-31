@@ -54,6 +54,7 @@ def _play_episode(
     database_path: Path | None,
     scenario: str,
     strategy: GridStrategyParameters | None = None,
+    enable_episodic_retrieval: bool = True,
 ) -> dict[str, Any]:
     is_static = scenario == "static"
     game = GridGame(
@@ -68,7 +69,13 @@ def _play_episode(
     )
     policy = ExplorationPolicy(strategy)
     adapter = _BenchmarkInputAdapter(game, policy)
-    engine = create_grid_engine(game, memory, adapter, policy)
+    engine = create_grid_engine(
+        game,
+        memory,
+        adapter,
+        policy,
+        enable_episodic_retrieval=enable_episodic_retrieval,
+    )
 
     turns = 0
     blocked = 0
@@ -248,19 +255,32 @@ def run_benchmark(
     max_turns: int,
     sequences: int,
     order_seed: int,
+    enable_episodic_retrieval: bool = True,
 ) -> dict[str, Any]:
     reports = []
     for sequence in range(sequences):
         seed_order = list(range(episodes))
         random.Random(order_seed + sequence).shuffle(seed_order)
         volatile = [
-            _play_episode(seed, max_turns, None, scenario)
+            _play_episode(
+                seed,
+                max_turns,
+                None,
+                scenario,
+                enable_episodic_retrieval=enable_episodic_retrieval,
+            )
             for seed in seed_order
         ]
         with tempfile.TemporaryDirectory(prefix="gm-benchmark-") as directory:
             database_path = Path(directory) / "memory.sqlite3"
             persistent = [
-                _play_episode(seed, max_turns, database_path, scenario)
+                _play_episode(
+                    seed,
+                    max_turns,
+                    database_path,
+                    scenario,
+                    enable_episodic_retrieval=enable_episodic_retrieval,
+                )
                 for seed in seed_order
             ]
         changed = sum(
@@ -297,6 +317,11 @@ def main() -> None:
     parser.add_argument("--max-turns", type=int, default=200)
     parser.add_argument("--sequences", type=int, default=1)
     parser.add_argument("--order-seed", type=int, default=9204)
+    parser.add_argument(
+        "--disable-episodic-retrieval",
+        action="store_true",
+        help="disable episodic retrieval for the ablation runs",
+    )
     args = parser.parse_args()
     if args.episodes <= 0 or args.max_turns <= 0 or args.sequences <= 0:
         parser.error("episodes, max-turns, and sequences must be positive")
@@ -311,6 +336,7 @@ def main() -> None:
             args.max_turns,
             args.sequences,
             args.order_seed,
+            enable_episodic_retrieval=not args.disable_episodic_retrieval,
         )
         for scenario in scenarios
     }

@@ -11,6 +11,7 @@ def create_grid_engine(
     input_adapter: ActionExecutor | None = None,
     policy: DecisionPolicy | None = None,
     strategy: GridStrategyParameters | None = None,
+    enable_episodic_retrieval: bool = True,
 ) -> GameEngine:
     agent_policy = (
         policy
@@ -22,6 +23,7 @@ def create_grid_engine(
         if memory is not None
         else GridMemoryStore(game_id="grid_30x30_v1")
     )
+    game_memory.enable_episodic_retrieval = enable_episodic_retrieval
     game_adapter = (
         input_adapter
         if input_adapter is not None

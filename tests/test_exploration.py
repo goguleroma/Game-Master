@@ -161,6 +161,32 @@ def test_decision_memory_persists_per_game_and_guides_equal_length_paths(
     assert other_game_action is not None and other_game_action.name == "move_right"
 
 
+def test_episodic_retrieval_ablation_disables_memory_guided_decisions() -> None:
+    memory = MemoryStore(enable_episodic_retrieval=False)
+    state = WorldState(
+        current_position=(1, 1),
+        target_position=(3, 2),
+        obstacle_positions=[],
+        grid_size=(5, 5),
+        confidence=1.0,
+    )
+    observation = {"hud": {"health": 10}}
+    visible_cells = [(x, y) for y in range(5) for x in range(5)]
+    memory.update_working_memory(observation, None, None)
+    for cell in visible_cells:
+        memory.mark_cell(cell, seen=True, obstacle=False)
+    memory.observe_goal(state.target_position, visible_cells)
+    context = memory.build_decision_context(state, observation)
+    for _ in range(3):
+        memory.record_decision_case(context, (0, 1), 0.5, "moved")
+
+    action = Planner().choose_action(state, memory)
+
+    assert memory.retrieve_direction_preferences(context) == {}
+    assert memory.retrieval_summary()["queries"] == 0
+    assert action is not None and action.memory_guided is False
+
+
 def test_policy_records_action_outcome_with_its_decision_context() -> None:
     policy = ExplorationPolicy()
     memory = MemoryStore()

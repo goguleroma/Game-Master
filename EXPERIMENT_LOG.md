@@ -396,6 +396,16 @@ Documentare gli esperimenti, i risultati e le conclusioni in modo replicabile.
 - Conclusione: l'improvement sul target dinamico e' attribuibile al ranking delle frontiere; il branch di esplorazione per obiettivo dinamico va mantenuto per strategie con soglia di cambio obiettivo superiore alla soglia di default.
 - Limiti e follow-up: A/B eseguito su un unico ordine; servono repliche su piu' ordini prima di una promozione automatica; i risultati ottenuti prima del rebasing del combattimento (commit `a6d7b70`) non sono direttamente comparabili con quelli successivi e i futuri esperimenti vanno categorizzati per versione di bilanciamento.
 
+### Esperimento 37 - Ablazione retrieval episodico per l'improvement dinamico
+
+- Data: 2026-10-31
+- Obiettivo: isolare il contributo del retrieval episodico alle decisioni del planner, dopo la chiusura della Fase 2 con verdict KEEP.
+- Metodo: benchmark dinamico, 40 seed, max-turns 200, ordine 9204, con flag di abilitazione dell'episodic retrieval (`--disable-episodic-retrieval`); suite completa: 70 test superati in 34,72 s.
+- Risultati - retrieval ON (nuovo planner): volatile coverage 0,731, persistent wins 25, stalled 0, mean_turns 116,33, persistent 25 vittorie/40 episodi.
+- Risultati - retrieval OFF (nuovo planner): volatile coverage 0,311, persistent wins 22, stalled 1, mean_turns 124,0, retrieval queries 0 con la flag disattivata; coincidente con la performance del vecchio planner della Fase 1.
+- Conclusione: l'improvement misurato nella Fase 2 e' attribuibile al percorso decisionale guidato dalla memoria (retrieval); il ramo di esplorazione per obiettivo dinamico risulta equivalente al ramo precedente sotto strategia di default.
+- Limiti e follow-up: ablazione eseguita su un unico ordine; servono repliche su piu' ordini prima di una promozione automatica.
+
 ## Registro da aggiornare
 
 Per ogni nuovo esperimento, aggiungere:
