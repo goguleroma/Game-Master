@@ -1,7 +1,14 @@
 import random
 from collections import deque
+from typing import TypedDict
 
 from core.types import Action, ActionResult
+
+
+class Enemy(TypedDict):
+    position: tuple[int, int]
+    health: int
+    alerted: bool
 
 
 class GridGame:
@@ -19,42 +26,187 @@ class GridGame:
         seed: int | None = None,
         moving_target: bool = True,
         pursuer_enabled: bool = True,
+        width: int = 30,
+        height: int = 30,
+        vision_radius: int = 4,
+        enemy_vision_radius: int = 4,
+        player_max_health: int = 20,
+        enemy_max_health: int = 8,
+        attack_damage: int = 3,
+        num_enemies: int = 5,
+        num_static_walls: int = 30,
+        target_move_interval: int = 2,
+        obstacle_density: float = 0.0,
     ) -> None:
-        self.width = 30
-        self.height = 30
-        self.vision_radius = 4
-        self.enemy_vision_radius = 4
+        self.width = width
+        self.height = height
+        self.vision_radius = vision_radius
+        self.enemy_vision_radius = enemy_vision_radius
+        self.player_max_health = player_max_health
+        self.enemy_max_health = enemy_max_health
+        self.attack_damage = attack_damage
+        self.num_enemies = num_enemies if pursuer_enabled else 0
+        self.num_static_walls = num_static_walls if pursuer_enabled else 0
+        self.target_move_interval = target_move_interval
+        self.obstacle_density = obstacle_density
+
         self.position = (0, 1)
-        self.obstacles = {(2, 1)}
+        self.obstacles = {(2, 1)}  # The single moving obstacle
         self.static_obstacles: set[tuple[int, int]] = set()
-        self.enemy_position: tuple[int, int] | None = (7, 1) if pursuer_enabled else None
-        self.player_health = 10
-        self.enemy_health = 10
-        self.enemy_alerted = False
+        self.enemies: list[Enemy] = []
+        self.player_health = self.player_max_health
         self.caught = False
         self._move_count = 0
         self._moving_target = moving_target
         self._rng = random.Random(seed)
+
+        # Generate static walls first (before placing enemies/target)
+        if self.num_static_walls > 0:
+            self._generate_static_walls()
+
+        # Initialize enemies
+        if self.num_enemies > 0:
+            self._initialize_enemies()
+
+        # Place target (ensuring connectivity)
+        self.target = self._place_target()
+
+    def _generate_static_walls(self) -> None:
+        """Generate static walls ensuring connectivity from player to most of the grid."""
+        # We'll generate walls randomly and verify connectivity
+        max_attempts = 50
+        for _ in range(max_attempts):
+            self.static_obstacles.clear()
+            # Generate candidate wall positions (excluding player start area)
+            candidates = [
+                (x, y)
+                for y in range(self.height)
+                for x in range(self.width)
+                if (x, y) != self.position
+                and (x, y) not in self.obstacles
+                # Keep a 5x5 area around player start clear
+                and not (0 <= x <= 4 and 0 <= y <= 4)
+            ]
+            if len(candidates) < self.num_static_walls:
+                continue
+            walls = self._rng.sample(candidates, self.num_static_walls)
+            self.static_obstacles.update(walls)
+
+            # Verify there's a path from player to multiple distant points
+            blocked = self.obstacles | self.static_obstacles
+            test_targets = [(15, 15), (20, 20), (25, 25), (10, 10), (5, 5), (25, 5), (5, 25)]
+            reachable_count = 0
+            for test_target in test_targets:
+                if test_target not in blocked:
+                    path = self._find_path(self.position, test_target, blocked)
+                    if path:
+                        reachable_count += 1
+            
+            # Require at least 4 out of 7 test targets to be reachable
+            if reachable_count >= 4:
+                return  # Connectivity verified
+
+        # Fallback: if we couldn't verify, just use fewer walls
+        if len(self.static_obstacles) > 15:
+            # Keep only 15 walls to ensure playability
+            self.static_obstacles = set(list(self.static_obstacles)[:15])
+
+    def _initialize_enemies(self) -> None:
+        """Initialize enemies at random non-overlapping positions."""
+        occupied = self.obstacles | self.static_obstacles | {self.position}
+        candidates = [
+            (x, y)
+            for y in range(self.height)
+            for x in range(self.width)
+            if (x, y) not in occupied
+            # Keep enemies at least distance 4 from player initially
+            and (abs(x - self.position[0]) + abs(y - self.position[1])) >= 4
+        ]
+        if len(candidates) < self.num_enemies:
+            # Fallback: reduce enemy count if not enough space
+            enemy_positions = self._rng.sample(candidates, len(candidates))
+        else:
+            enemy_positions = self._rng.sample(candidates, self.num_enemies)
+
+        for pos in enemy_positions:
+            self.enemies.append({
+                "position": pos,
+                "health": self.enemy_max_health,
+                "alerted": False,
+            })
+
+    def _place_target(self) -> tuple[int, int]:
+        """Place target ensuring it's reachable from player position."""
+        blocked = self.obstacles | self.static_obstacles | {e["position"] for e in self.enemies}
         candidates = [
             (x, y)
             for y in range(self.height)
             for x in range(self.width)
             if (x, y) != self.position
-            and (x, y) not in self.obstacles
-            and (x, y) != self.enemy_position
+            and (x, y) not in blocked
             and abs(x - self.position[0]) + abs(y - self.position[1]) >= 4
         ]
-        self.target = self._rng.choice(candidates)
+        # Filter to only reachable positions
+        reachable = []
+        for cand in candidates:
+            path = self._find_path(self.position, cand, blocked)
+            if path:
+                reachable.append(cand)
+
+        if not reachable:
+            # Fallback: just pick any valid candidate
+            return self._rng.choice(candidates) if candidates else (29, 29)
+
+        return self._rng.choice(reachable)
 
     @property
     def won(self) -> bool:
         return self.position == self.target
 
+    @property
+    def lost(self) -> bool:
+        return self.caught
+
+    @property
+    def is_game_over(self) -> bool:
+        return self.won or self.lost
+
+    # Backward-compatible properties for tests (first enemy)
+    @property
+    def enemy_position(self) -> tuple[int, int] | None:
+        return self.enemies[0]["position"] if self.enemies else None
+
+    @property
+    def enemy_health(self) -> int:
+        return self.enemies[0]["health"] if self.enemies else 0
+
+    @property
+    def enemy_alerted(self) -> bool:
+        return self.enemies[0]["alerted"] if self.enemies else False
+
+    @enemy_position.setter
+    def enemy_position(self, value: tuple[int, int] | None) -> None:
+        if value is None:
+            self.enemies.clear()
+        elif self.enemies:
+            self.enemies[0]["position"] = value
+        else:
+            self.enemies.append({"position": value, "health": self.enemy_max_health, "alerted": False})
+
+    @enemy_health.setter
+    def enemy_health(self, value: int) -> None:
+        if self.enemies:
+            self.enemies[0]["health"] = value
+
+    @enemy_alerted.setter
+    def enemy_alerted(self, value: bool) -> None:
+        if self.enemies:
+            self.enemies[0]["alerted"] = value
+
     def observe(self) -> dict[str, object]:
         target_visible = self.is_visible(self.target)
-        obstacle_positions = self.obstacles | self.static_obstacles | (
-            {self.enemy_position} if self.enemy_position is not None else set()
-        )
+        # Obstacles are only static/moving obstacles, NOT enemies
+        obstacle_positions = self.obstacles | self.static_obstacles
         visible_obstacles = sorted(
             obstacle
             for obstacle in obstacle_positions
@@ -65,17 +217,22 @@ class GridGame:
             for obstacle in sorted(self.obstacles)
             if self.is_visible(obstacle)
         ]
-        if self.enemy_position is not None and self.is_visible(self.enemy_position):
-            visible_entities.append({
-                "id": "entity-2",
-                "position": list(self.enemy_position),
-                "health": self.enemy_health,
-            })
+        # Add visible enemies as entities with unique IDs
+        for idx, enemy in enumerate(self.enemies):
+            if self.is_visible(enemy["position"]):
+                visible_entities.append({
+                    "id": f"entity-{idx + 2}",  # entity-2, entity-3, etc.
+                    "position": list(enemy["position"]),
+                    "health": enemy["health"],
+                })
         objects = ["player"]
         if target_visible:
             objects.append("goal")
         if visible_obstacles:
             objects.append("obstacle")
+
+        # Confidence: 1.0 if target visible, 0.5 otherwise
+        confidence = 1.0 if target_visible else 0.5
 
         return {
             "objects": objects,
@@ -102,13 +259,13 @@ class GridGame:
                 },
             },
             "goal": "reach_goal",
-            "confidence": 1.0,
+            "confidence": confidence,
         }
 
     def is_visible(self, cell: tuple[int, int]) -> bool:
-        dx = cell[0] - self.position[0]
-        dy = cell[1] - self.position[1]
-        return dx * dx + dy * dy <= self.vision_radius * self.vision_radius
+        dx = abs(cell[0] - self.position[0])
+        dy = abs(cell[1] - self.position[1])
+        return dx + dy <= self.vision_radius
 
     def execute(self, action: Action) -> ActionResult:
         if self.won or self.caught:
@@ -125,11 +282,13 @@ class GridGame:
                 return self._execute_move(value)
             return self._execute_combat(kind)
         if action.name == "wait":
+            # wait is a true no-op that doesn't count as a move
             return ActionResult(
-                success=False,
+                success=True,
                 details={
-                    "status": "waiting_for_visible_target",
+                    "status": "wait",
                     "position": list(self.position),
+                    "move_count": self._move_count,
                 },
             )
 
@@ -155,22 +314,27 @@ class GridGame:
             self.position[1] + direction[1],
         )
 
+        enemy_positions = {e["position"] for e in self.enemies}
         if not (0 <= next_position[0] < self.width and 0 <= next_position[1] < self.height):
             status = "blocked_by_boundary"
         elif (
             next_position in self.obstacles
             or next_position in self.static_obstacles
-            or next_position == self.enemy_position
+            or next_position in enemy_positions
         ):
             status = "blocked_by_obstacle"
         else:
             self.position = next_position
             status = "goal_reached" if self.won else "moved"
 
-        self._move_count += 1
+        # Only increment move_count on successful moves (position actually changed)
+        moved = self.position != previous_position
+        if moved:
+            self._move_count += 1
+
         if self.won:
             return ActionResult(
-                success=self.position != previous_position,
+                success=moved,
                 details={
                     "status": status,
                     "position": list(self.position),
@@ -178,12 +342,14 @@ class GridGame:
                 },
             )
 
+        # Enemies get a turn on every player action (even blocked moves)
+        # This allows enemies to attack autonomously when adjacent
         self._move_obstacle()
-        if self._moving_target and self._move_count % 2 == 0:
+        if self._moving_target and self._move_count % self.target_move_interval == 0:
             self._move_target()
-        self._move_enemy()
+        self._move_enemies()
         return ActionResult(
-            success=self.position != previous_position,
+            success=moved,
             details={
                 "status": "caught" if self.caught else status,
                 "position": list(self.position),
@@ -192,32 +358,37 @@ class GridGame:
         )
 
     def _execute_combat(self, player_action: str) -> ActionResult:
-        if self.enemy_position is None or self._distance(self.position, self.enemy_position) != 1:
+        # Find adjacent enemy (if any)
+        adjacent_enemy = self._get_adjacent_enemy()
+        if adjacent_enemy is None:
             return ActionResult(
                 success=True,
-                details={
-                    "status": "completed",
-                },
+                details={"status": "completed"},
             )
 
         enemy_action = self._enemy_combat_choice()
 
         if player_action == "attack" and enemy_action != "defend":
+<<<<<<< Updated upstream
             self.enemy_health -= 3
         if enemy_action == "attack" and player_action != "defend":
             self.player_health -= 3
+=======
+            adjacent_enemy["health"] -= self.attack_damage
+        if enemy_action == "attack" and player_action != "defend":
+            self.player_health -= self.attack_damage
+>>>>>>> Stashed changes
 
         enemy_attacked = enemy_action == "attack"
         if self.player_health <= 0:
             self.player_health = 0
             self.caught = True
-        if self.enemy_health <= 0:
-            self.enemy_health = 0
-            self.static_obstacles.add(self.enemy_position)
-            self.enemy_position = None
-            self.enemy_alerted = False
+        if adjacent_enemy["health"] <= 0:
+            adjacent_enemy["health"] = 0
+            self.static_obstacles.add(adjacent_enemy["position"])
+            self.enemies.remove(adjacent_enemy)
         elif not self.caught and enemy_attacked:
-            self._retreat_enemy()
+            self._retreat_enemy(adjacent_enemy)
 
         return ActionResult(
             success=True,
@@ -226,13 +397,19 @@ class GridGame:
             },
         )
 
+    def _get_adjacent_enemy(self) -> Enemy | None:
+        """Return the first enemy adjacent to the player, or None."""
+        for enemy in self.enemies:
+            if self._distance(self.position, enemy["position"]) == 1:
+                return enemy
+        return None
+
     def _enemy_combat_choice(self) -> str:
         return self._rng.choice(("attack", "defend"))
 
-    def _retreat_enemy(self) -> None:
-        if self.enemy_position is None:
-            return
-        x, y = self.enemy_position
+    def _retreat_enemy(self, enemy: Enemy) -> None:
+        x, y = enemy["position"]
+        other_enemy_positions = {e["position"] for e in self.enemies if e is not enemy}
         candidates = [
             (x + dx, y + dy)
             for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0))
@@ -240,29 +417,54 @@ class GridGame:
             and 0 <= y + dy < self.height
             and (x + dx, y + dy) not in self.obstacles
             and (x + dx, y + dy) not in self.static_obstacles
+            and (x + dx, y + dy) not in other_enemy_positions
             and (x + dx, y + dy) != self.position
             and (x + dx, y + dy) != self.target
         ]
         if candidates:
             farthest = max(self._distance(candidate, self.position) for candidate in candidates)
-            self.enemy_position = self._rng.choice(
+            enemy["position"] = self._rng.choice(
                 [candidate for candidate in candidates if self._distance(candidate, self.position) == farthest]
             )
 
-    def _move_enemy(self) -> None:
-        if self.enemy_position is None:
-            return
-        dx = self.position[0] - self.enemy_position[0]
-        dy = self.position[1] - self.enemy_position[1]
-        if dx * dx + dy * dy <= self.enemy_vision_radius * self.enemy_vision_radius:
-            self.enemy_alerted = True
-        if not self.enemy_alerted:
-            return
+    def _move_enemies(self) -> None:
+        """Move all alerted enemies toward the player."""
+        enemy_positions = {e["position"] for e in self.enemies}
+        for enemy in self.enemies:
+            # Check if enemy should become alerted (using Manhattan distance)
+            dx = abs(self.position[0] - enemy["position"][0])
+            dy = abs(self.position[1] - enemy["position"][1])
+            if dx + dy <= self.enemy_vision_radius:
+                enemy["alerted"] = True
+            if not enemy["alerted"]:
+                continue
 
-        blocked = self.obstacles | self.static_obstacles | {self.target}
-        path = self._find_path(self.enemy_position, self.position, blocked)
-        if len(path) > 2:
-            self.enemy_position = path[1]
+            # Move enemy toward player using BFS
+            blocked = self.obstacles | self.static_obstacles | {self.target} | (enemy_positions - {enemy["position"]})
+            path = self._find_path(enemy["position"], self.position, blocked)
+            if len(path) > 1:  # path[0] is current position, path[1] is next step
+                # Check if next step would move onto player (catch)
+                next_pos = path[1]
+                if next_pos == self.position:
+                    self.player_health -= self.attack_damage
+                    if self.player_health <= 0:
+                        self.player_health = 0
+                        self.caught = True
+                    # Enemy stays in place after attacking
+                else:
+                    enemy["position"] = next_pos
+                    # Update the set for next enemy's pathfinding
+                    enemy_positions = {e["position"] for e in self.enemies}
+
+        # After all enemies move, check if any enemy is now on player (catch)
+        if not self.caught:
+            for enemy in self.enemies:
+                if enemy["position"] == self.position:
+                    self.player_health -= self.attack_damage
+                    if self.player_health <= 0:
+                        self.player_health = 0
+                        self.caught = True
+                    break
 
     @staticmethod
     def _distance(first: tuple[int, int], second: tuple[int, int]) -> int:
@@ -302,6 +504,7 @@ class GridGame:
 
     def _move_obstacle(self) -> None:
         current_obstacle = next(iter(self.obstacles))
+        enemy_positions = {e["position"] for e in self.enemies}
         available_positions = [
             (x, y)
             for y in range(self.height)
@@ -311,16 +514,18 @@ class GridGame:
                 self.position,
                 self.target,
                 current_obstacle,
-                self.enemy_position,
+                *enemy_positions,
                 *self.static_obstacles,
             }
         ]
         if not available_positions:
-            raise RuntimeError("No free position available for the moving obstacle.")
+            # Fallback: keep obstacle in current position
+            return
         self.obstacles = {self._rng.choice(available_positions)}
 
     def _move_target(self) -> None:
         current_target = self.target
+        enemy_positions = {e["position"] for e in self.enemies}
         available_positions = [
             (x, y)
             for y in range(self.height)
@@ -329,13 +534,14 @@ class GridGame:
             not in {
                 self.position,
                 *self.obstacles,
-                self.enemy_position,
+                *enemy_positions,
                 current_target,
                 *self.static_obstacles,
             }
         ]
         if not available_positions:
-            raise RuntimeError("No free position available for the moving target.")
+            # Fallback: keep target in current position
+            return
         self.target = self._rng.choice(available_positions)
 
 

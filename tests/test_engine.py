@@ -1,6 +1,7 @@
 from core.engine import GameEngine
 from core.memory import MemoryStore
 from core.types import Action, ActionResult, GameState, Observation
+from core.observation_adapter import ObservationAdapter
 
 
 class RecordingPolicy:
@@ -26,18 +27,65 @@ class RecordingExecutor:
 
 
 class FixedObservationAdapter:
+    """Test adapter that implements ObservationAdapter protocol."""
+
     def __init__(self) -> None:
         self.observations: list[Observation] = []
+        self._frame: object | None = None
+        self._extract_result: GameState | None = None
+
+    def get_frame(self) -> object | None:
+        return self._frame
 
     def extract(self, observation: Observation) -> GameState:
         self.observations.append(observation)
+        if self._extract_result is not None:
+            return self._extract_result
+        # Default: extract from the observation's image if it's a dict
+        image = observation.image
+        if isinstance(image, dict):
+            return GameState(
+                objects=image.get("objects", ["normalized"]),
+                hud=image.get("hud", {"value": "adapted"}),
+                goal=image.get("goal"),
+                confidence=image.get("confidence", 0.5),
+                controls=image.get("controls", []),
+            )
         return GameState(objects=["normalized"], hud={"value": "adapted"})
+
+    def set_extract_result(self, state: GameState) -> None:
+        self._extract_result = state
+
+    def reset(self) -> None:
+        self._frame = None
+        self._extract_result = None
+
+    @property
+    def is_real_time(self) -> bool:
+        return False
+
+    @property
+    def frame_shape(self) -> tuple[int, ...]:
+        return (0, 0, 0)
 
 
 def test_engine_delegates_decision_and_execution_without_action_assumptions() -> None:
     policy = RecordingPolicy()
     executor = RecordingExecutor()
-    engine = GameEngine(policy, executor)
+    adapter = FixedObservationAdapter()
+    adapter._frame = {
+        "objects": ["unclassified-object"],
+        "hud": {"value": "opaque-state"},
+        "goal": "uninterpreted-intent",
+        "confidence": 0.8,
+    }
+    adapter.set_extract_result(GameState(
+        objects=["unclassified-object"],
+        hud={"value": "opaque-state"},
+        goal="uninterpreted-intent",
+        confidence=0.8,
+    ))
+    engine = GameEngine(policy, executor, adapter)
 
     result = engine.process_frame(
         {
@@ -61,7 +109,8 @@ def test_engine_uses_injected_observation_adapter() -> None:
     policy = RecordingPolicy()
     executor = RecordingExecutor()
     adapter = FixedObservationAdapter()
-    engine = GameEngine(policy, executor, state_extractor=adapter)
+    adapter._frame = {"raw": "environment-data"}
+    engine = GameEngine(policy, executor, adapter)
 
     result = engine.process_frame({"raw": "environment-data"}, source="adapter-test")
 
@@ -79,7 +128,9 @@ def test_engine_records_observation_when_policy_declines_to_act() -> None:
 
     policy = NoActionPolicy()
     executor = RecordingExecutor()
-    engine = GameEngine(policy, executor)
+    adapter = FixedObservationAdapter()
+    adapter._frame = {"hud": {"value": 1}}
+    engine = GameEngine(policy, executor, adapter)
 
     result = engine.process_frame({"hud": {"value": 1}}, source="contract-test")
 
@@ -92,8 +143,9 @@ def test_engine_records_observation_when_policy_declines_to_act() -> None:
 def test_engine_run_stops_after_max_steps() -> None:
     policy = RecordingPolicy()
     executor = RecordingExecutor()
-    engine = GameEngine(policy, executor, max_steps=2)
-    engine.capture.set_frame({"hud": {"value": "frame"}})
+    adapter = FixedObservationAdapter()
+    adapter._frame = {"hud": {"value": "frame"}}
+    engine = GameEngine(policy, executor, adapter, max_steps=2)
 
     engine.run()
 
@@ -104,8 +156,9 @@ def test_engine_run_stops_after_max_steps() -> None:
 def test_engine_run_stops_when_should_stop_is_requested() -> None:
     policy = RecordingPolicy()
     executor = RecordingExecutor()
-    engine = GameEngine(policy, executor, should_stop=lambda: True)
-    engine.capture.set_frame({"hud": {"value": "frame"}})
+    adapter = FixedObservationAdapter()
+    adapter._frame = {"hud": {"value": "frame"}}
+    engine = GameEngine(policy, executor, adapter, should_stop=lambda: True)
 
     engine.run()
 

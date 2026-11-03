@@ -9,28 +9,116 @@ from pathlib import Path
 from typing import Any
 
 from core.types import Action, ActionResult
-from simulated_game.agent import ExplorationPolicy
-from simulated_game.agent.memory import GridMemoryStore
-from simulated_game.agent.planner import GridStrategyParameters
-from simulated_game.game import GridGame
+from adapters.grid_30x30 import (
+    GridExplorationPolicy,
+    GridMemoryStore,
+    GridStrategyParameters,
+    GridGame,
+    WorldModelLearner,
+)
 from simulated_game.runtime import create_grid_engine
 
 
 class _BenchmarkInputAdapter:
-    def __init__(self, game: GridGame, policy: ExplorationPolicy) -> None:
+    def __init__(self, game: GridGame, policy: GridExplorationPolicy, memory: GridMemoryStore) -> None:
         self.game = game
         self.learner = policy.control_learner
+        self.memory = memory
         self.predictions = 0
         self.correct_predictions = 0
         self.predicted_movement_attempts = 0
         self.predicted_movement_without_progress = 0
 
     def execute(self, action: Action) -> ActionResult:
-        prediction = (
-            self.learner.predicted_displacement(action.name)
-            if action.name.startswith("control_")
-            else None
-        )
+        prediction = None
+        if action.name.startswith("control_"):
+            # Build context from current game state
+            observation = self.game.observe()
+            hud = observation.get("hud", {})
+            grid = hud.get("grid", {})
+            position = grid.get("position", [0, 0])
+            target = grid.get("target")
+            
+            target_direction = None
+            if target is not None:
+                dx = target[0] - position[0]
+                dy = target[1] - position[1]
+                target_direction = [
+                    0 if dx == 0 else (1 if dx > 0 else -1),
+                    0 if dy == 0 else (1 if dy > 0 else -1),
+                ]
+            
+            known_obstacles = set(tuple(obs) for obs in grid.get("obstacles", []))
+            adjacent_obstacles = []
+            for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0)):
+                cell = (position[0] + dx, position[1] + dy)
+                if cell in known_obstacles:
+                    adjacent_obstacles.append(True)
+                else:
+                    adjacent_obstacles.append(False)
+            
+            # Get health
+            health = hud.get("health", 10)
+            health_bucket = 0 if health <= 3 else (1 if health <= 6 else 2)
+            
+            # Get entity distance
+            entity_distances = []
+            for entity in grid.get("entities", []):
+                if isinstance(entity, dict) and entity.get("id") and entity.get("position"):
+                    epos = tuple(entity["position"])
+                    dist = abs(epos[0] - position[0]) + abs(epos[1] - position[1])
+                    entity_distances.append(dist)
+            nearest_entity = min(entity_distances) if entity_distances else None
+            entity_bucket = None
+            if nearest_entity is not None:
+                if nearest_entity <= 1:
+                    entity_bucket = 0
+                elif nearest_entity <= 2:
+                    entity_bucket = 1
+                elif nearest_entity <= 4:
+                    entity_bucket = 2
+                else:
+                    entity_bucket = 3
+            
+            frontier_count = len(self.memory.spatial.frontier) if self.memory else 0
+            
+            context = {
+                "goal_visible": target is not None,
+                "goal_known": target is not None,
+                "target_direction": target_direction,
+                "goal_dynamic": self.memory.spatial.goal_is_dynamic if self.memory else False,
+                "adjacent_obstacles": adjacent_obstacles,
+                "entity_distance_bucket": entity_bucket,
+                "health_bucket": health_bucket,
+                "frontier_bucket": min(frontier_count, 2),
+            }
+            
+            # Convert context to key
+            required_keys = [
+                "goal_visible", "goal_known", "target_direction", "goal_dynamic",
+                "adjacent_obstacles", "entity_distance_bucket", "health_bucket", "frontier_bucket",
+            ]
+            key_parts = []
+            for k in required_keys:
+                v = context.get(k)
+                if v is None:
+                    key_parts.append(-1)
+                elif isinstance(v, bool):
+                    key_parts.append(1 if v else 0)
+                elif isinstance(v, (list, tuple)):
+                    for item in v:
+                        if item is None:
+                            key_parts.append(-1)
+                        else:
+                            key_parts.append(int(item))
+                elif isinstance(v, int):
+                    key_parts.append(v)
+                else:
+                    key_parts.append(0)
+            context_key = tuple(key_parts)
+            
+            prediction = self.learner.predicted_displacement(action.name, context_key)
+        
         previous_position = self.game.position
         result = self.game.execute(action)
         if prediction is not None:
@@ -66,9 +154,21 @@ def _play_episode(
         if database_path is not None
         else GridMemoryStore()
     )
+<<<<<<< Updated upstream
     policy = ExplorationPolicy(strategy)
     adapter = _BenchmarkInputAdapter(game, policy)
     engine = create_grid_engine(game, memory, adapter, policy)
+=======
+    policy = GridExplorationPolicy(strategy)
+    adapter = _BenchmarkInputAdapter(game, policy, memory)
+    engine = create_grid_engine(
+        game,
+        memory,
+        adapter,
+        policy,
+        enable_episodic_retrieval=enable_episodic_retrieval,
+    )
+>>>>>>> Stashed changes
 
     turns = 0
     blocked = 0
@@ -99,10 +199,95 @@ def _play_episode(
         action = memory.experiences[-1]["action"]
         if action.name.startswith("control_"):
             control_actions += 1
+            # Build context from current game state (same as _BenchmarkInputAdapter)
+            observation = game.observe()
+            hud = observation.get("hud", {})
+            grid = hud.get("grid", {})
+            position = grid.get("position", [0, 0])
+            target = grid.get("target")
+            
+            target_direction = None
+            if target is not None:
+                dx = target[0] - position[0]
+                dy = target[1] - position[1]
+                target_direction = [
+                    0 if dx == 0 else (1 if dx > 0 else -1),
+                    0 if dy == 0 else (1 if dy > 0 else -1),
+                ]
+            
+            known_obstacles = set(tuple(obs) for obs in grid.get("obstacles", []))
+            adjacent_obstacles = []
+            for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0)):
+                cell = (position[0] + dx, position[1] + dy)
+                if cell in known_obstacles:
+                    adjacent_obstacles.append(True)
+                else:
+                    adjacent_obstacles.append(False)
+            
+            # Get health
+            health = hud.get("health", 10)
+            health_bucket = 0 if health <= 3 else (1 if health <= 6 else 2)
+            
+            # Get entity distance
+            entity_distances = []
+            for entity in grid.get("entities", []):
+                if isinstance(entity, dict) and entity.get("id") and entity.get("position"):
+                    epos = tuple(entity["position"])
+                    dist = abs(epos[0] - position[0]) + abs(epos[1] - position[1])
+                    entity_distances.append(dist)
+            nearest_entity = min(entity_distances) if entity_distances else None
+            entity_bucket = None
+            if nearest_entity is not None:
+                if nearest_entity <= 1:
+                    entity_bucket = 0
+                elif nearest_entity <= 2:
+                    entity_bucket = 1
+                elif nearest_entity <= 4:
+                    entity_bucket = 2
+                else:
+                    entity_bucket = 3
+            
+            frontier_count = len(memory.spatial.frontier) if memory else 0
+            
+            context = {
+                "goal_visible": target is not None,
+                "goal_known": target is not None,
+                "target_direction": target_direction,
+                "goal_dynamic": memory.spatial.goal_is_dynamic if memory else False,
+                "adjacent_obstacles": adjacent_obstacles,
+                "entity_distance_bucket": entity_bucket,
+                "health_bucket": health_bucket,
+                "frontier_bucket": min(frontier_count, 2),
+            }
+            
+            # Convert context to key
+            required_keys = [
+                "goal_visible", "goal_known", "target_direction", "goal_dynamic",
+                "adjacent_obstacles", "entity_distance_bucket", "health_bucket", "frontier_bucket",
+            ]
+            key_parts = []
+            for k in required_keys:
+                v = context.get(k)
+                if v is None:
+                    key_parts.append(-1)
+                elif isinstance(v, bool):
+                    key_parts.append(1 if v else 0)
+                elif isinstance(v, (list, tuple)):
+                    for item in v:
+                        if item is None:
+                            key_parts.append(-1)
+                        else:
+                            key_parts.append(int(item))
+                elif isinstance(v, int):
+                    key_parts.append(v)
+                else:
+                    key_parts.append(0)
+            context_key = tuple(key_parts)
+            
             controls_without_prediction += (
                 did_not_move
                 and engine.policy.control_learner.predicted_displacement(
-                    action.name
+                    action.name, context_key
                 )
                 is None
             )

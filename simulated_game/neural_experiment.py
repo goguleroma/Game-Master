@@ -6,6 +6,15 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import torch
+
+# Optional DirectML import
+try:
+    import torch_directml
+    DIRECTML_AVAILABLE = True
+except ImportError:
+    DIRECTML_AVAILABLE = False
+
 from core.types import Action, ActionResult, GameState
 from simulated_game.agent.exploration_policy import ExplorationPolicy
 from simulated_game.agent.memory import GridMemoryStore
@@ -17,9 +26,9 @@ from simulated_game.runtime import create_grid_engine
 
 
 class _BaselineDemonstrationPolicy:
-    def __init__(self) -> None:
+    def __init__(self, device: torch.device) -> None:
         self.baseline = ExplorationPolicy(GridStrategyParameters())
-        self.encoder = NeuralGridPolicy()
+        self.encoder = NeuralGridPolicy(device=device)
         self.samples: list[tuple[tuple[float, ...], int, tuple[bool, ...]]] = []
 
     def decide(self, observation: GameState, memory: GridMemoryStore) -> Action | None:
@@ -243,10 +252,19 @@ def run_experiment(
     if imitation_epochs <= 0:
         raise ValueError("imitation_epochs must be positive.")
 
+    # Determine device (DirectML for AMD GPU on Windows)
+    if DIRECTML_AVAILABLE and torch_directml.is_available():
+        device = torch_directml.device()
+        print(f"Using DirectML device: {device}")
+    else:
+        device = torch.device("cpu")
+        print("Using CPU device")
+    
     policy = NeuralGridPolicy(
         seed=seed,
         training=True,
         epsilon_start=0.2 if initialization == "baseline" else 1.0,
+        device=device,
     )
     training_mode = (
         "baseline_warm_start" if initialization == "baseline" else "dqn_from_scratch"
@@ -341,7 +359,7 @@ def run_experiment(
             initialization == "baseline"
             and imitation_report is None
         ):
-            collector = _BaselineDemonstrationPolicy()
+            collector = _BaselineDemonstrationPolicy(device=device)
             demonstration_results: list[dict[str, Any]] = []
             for index in range(imitation_episodes):
                 demonstration_results.append(
@@ -538,6 +556,7 @@ def run_experiment(
         seed=seed,
         training=False,
         epsilon_start=0.2 if initialization == "baseline" else 1.0,
+        device=device,
     )
     holdout_policy.agent.load(selected_checkpoint, resume_training=False)
     neural_holdout = _evaluate_neural(holdout_seeds, max_turns, holdout_policy)

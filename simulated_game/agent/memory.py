@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
-from collections import deque
+from collections import deque, defaultdict
+from enum import Enum
 import json
 import math
 import sqlite3
@@ -8,11 +9,108 @@ from contextlib import closing
 from itertools import islice
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+import asyncio
 
 Position = Tuple[int, int]
 DECISION_CASE_LIMIT = 2000
 DECISION_RETRIEVAL_WINDOW = 256
 _DIRECTIONS: tuple[Position, ...] = ((0, -1), (1, 0), (0, 1), (-1, 0))
+
+
+@dataclass
+class AttentionRequest:
+    """Top-down attention request for focused observation."""
+    roi: Tuple[Position, Position]  # Region of interest (top-left, bottom-right)
+    priority: float  # 0.0 to 1.0
+    reason: str  # Why this region is important
+    timestamp: float = field(default_factory=time.monotonic)
+    source: str = "planner"  # 'planner', 'consolidator', 'policy', etc.
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class AttentionManager:
+    """Manages top-down attention requests for focused perception.
+
+    This allows higher-level components (planner, consolidator, policy) to
+    request focused observation of specific game regions.
+    """
+    max_requests: int = 10
+    default_priority: float = 0.5
+
+    def __init__(self):
+        self.requests: List[AttentionRequest] = []
+        self.history: List[AttentionRequest] = []
+
+    def request_observation(
+        self,
+        roi: Tuple[Position, Position],
+        priority: float = 0.5,
+        reason: str = "",
+        source: str = "planner",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> AttentionRequest:
+        """Request focused observation of a region.
+
+        Args:
+            roi: Region of interest as ((x1, y1), (x2, y2))
+            priority: Priority 0.0-1.0 (higher = more important)
+            reason: Why this region needs attention
+            source: Requesting component
+            metadata: Additional context
+
+        Returns:
+            The created AttentionRequest
+        """
+        request = AttentionRequest(
+            roi=roi,
+            priority=min(1.0, max(0.0, priority)),
+            reason=reason,
+            source=source,
+            metadata=metadata or {},
+        )
+        self.requests.append(request)
+        self.history.append(request)
+
+        # Keep only max_requests
+        if len(self.requests) > self.max_requests:
+            self.requests = sorted(self.requests, key=lambda r: r.priority, reverse=True)[:self.max_requests]
+
+        return request
+
+    def get_top_requests(self, n: int = 3) -> List[AttentionRequest]:
+        """Get top N attention requests by priority."""
+        return sorted(self.requests, key=lambda r: r.priority, reverse=True)[:n]
+
+    def clear_requests(self) -> None:
+        """Clear current attention requests."""
+        self.requests.clear()
+
+    def get_requests_for_region(self, position: Position, radius: int = 5) -> List[AttentionRequest]:
+        """Get requests that cover a specific position."""
+        matching = []
+        for req in self.requests:
+            (x1, y1), (x2, y2) = req.roi
+            if x1 <= position[0] <= x2 and y1 <= position[1] <= y2:
+                matching.append(req)
+        return sorted(matching, key=lambda r: r.priority, reverse=True)
+
+
+class Scope(Enum):
+    """Scope of knowledge applicability."""
+    EPISODE = "episode"
+    SESSION = "session"
+    GAME = "game"
+    GENERAL = "general"
+
+
+class SourceMemory(Enum):
+    """Source memory tier from which knowledge originated."""
+    STM = "stm"       # Short-term memory
+    MTM = "mtm"       # Medium-term memory
+    LTM = "ltm"       # Long-term memory
+    GSM = "gsm"       # General/shared memory
+    GM = "gm"         # Game memory
 
 
 class ShortTermMemory:
@@ -66,6 +164,18 @@ class KnowledgeItem:
     confidence: float
     evidence_count: int
     context: Dict[str, Any] = field(default_factory=dict)
+    # Provenance tracking
+    provenance: Dict[str, Any] = field(default_factory=dict)
+    # Scope of applicability
+    scope: Scope = Scope.EPISODE
+    # Confirmation tracking
+    confirmation_count: int = 0
+    # Validity tracking
+    validity: Dict[str, Any] = field(default_factory=dict)
+    # Transferability flag
+    transferable: bool = False
+    # Consolidation traceability
+    consolidated_from: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -99,7 +209,17 @@ class GridMemoryStore:
         self,
         game_id: Optional[str] = None,
         database_path: Optional[str | Path] = None,
+<<<<<<< Updated upstream
     ) -> None:
+=======
+        enable_episodic_retrieval: bool = True,
+        enable_consolidation: bool = False,
+        consolidation_config: Optional["ConsolidationConfig"] = None,
+    ) -> None:
+        self.enable_episodic_retrieval = enable_episodic_retrieval
+        self.enable_consolidation = enable_consolidation
+        self._consolidation_config = consolidation_config
+>>>>>>> Stashed changes
         self.short_term = ShortTermMemory()
         self.working = WorkingMemory()
         self.spatial = SpatialMemory()
@@ -122,6 +242,10 @@ class GridMemoryStore:
             "matched_cases": 0,
             "preferences": {},
         }
+
+        # Top-down attention management
+        self.attention = AttentionManager()
+
         self.game_id = game_id
         self.database_path = Path(database_path) if database_path is not None else None
         if self.database_path is not None:
@@ -166,11 +290,249 @@ class GridMemoryStore:
                     ON game_decision_cases (game_id, id)
                     """
                 )
+                # GM (General Memory) persistence tables
+                connection.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS general_knowledge (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        key TEXT NOT NULL,
+                        value TEXT NOT NULL,
+                        confidence REAL NOT NULL,
+                        evidence_count INTEGER NOT NULL,
+                        context TEXT NOT NULL,
+                        provenance TEXT NOT NULL,
+                        scope TEXT NOT NULL,
+                        confirmation_count INTEGER NOT NULL,
+                        validity TEXT NOT NULL,
+                        transferable INTEGER NOT NULL,
+                        consolidated_from TEXT NOT NULL,
+                        created_at REAL NOT NULL,
+                        updated_at REAL NOT NULL
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS general_knowledge_by_scope
+                    ON general_knowledge (scope, confidence DESC)
+                    """
+                )
+                connection.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS gm_patterns (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        pattern_type TEXT NOT NULL,  -- 'control', 'mechanic', 'principle'
+                        pattern_key TEXT NOT NULL,
+                        pattern_value TEXT NOT NULL,
+                        confidence REAL NOT NULL,
+                        source_games TEXT NOT NULL,  -- JSON list of game_ids
+                        evidence_count INTEGER NOT NULL,
+                        created_at REAL NOT NULL,
+                        updated_at REAL NOT NULL
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS gm_patterns_by_type
+                    ON gm_patterns (pattern_type, confidence DESC)
+                    """
+                )
                 connection.commit()
+
+        # STM event buffer for consolidation
+        self._stm_buffer: List[Dict[str, Any]] = []
+        self._consolidator: Optional["MemoryConsolidator"] = None
+        self._consolidation_task: Optional[asyncio.Task] = None
 
     @property
     def records(self) -> List[Dict[str, Any]]:
         return self.experiences
+
+    @property
+    def consolidator(self) -> Optional["MemoryConsolidator"]:
+        """Lazily initialize and return the MemoryConsolidator."""
+        if not self.enable_consolidation:
+            return None
+        if self._consolidator is None:
+            from .memory_consolidator import MemoryConsolidator, ConsolidationConfig
+            config = self._consolidation_config or ConsolidationConfig()
+            self._consolidator = MemoryConsolidator(self, config)
+        return self._consolidator
+
+    def start_consolidation(self, interval_seconds: float = 30.0) -> None:
+        """Start background consolidation loop.
+        
+        Args:
+            interval_seconds: Interval between consolidation steps in seconds.
+            
+        Note:
+            Requires a running asyncio event loop. If no loop is running,
+            use consolidate_now() for synchronous consolidation.
+        """
+        if not self.enable_consolidation:
+            return
+        consolidator = self.consolidator
+        if consolidator is None:
+            return
+        if consolidator._running:
+            return
+        consolidator.config.consolidation_interval_seconds = interval_seconds
+        try:
+            loop = asyncio.get_running_loop()
+            self._consolidation_task = loop.create_task(consolidator.start())
+        except RuntimeError:
+            raise RuntimeError(
+                "No running event loop. start_consolidation() requires an async context. "
+                "Use consolidate_now() for synchronous consolidation or run within an async function."
+            )
+
+    def stop_consolidation(self) -> None:
+        """Stop background consolidation loop.
+        
+        Note:
+            Requires a running asyncio event loop (the same one used to start consolidation).
+        """
+        if self._consolidator is None:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+            self._consolidation_task = loop.create_task(self._consolidator.stop())
+        except RuntimeError:
+            raise RuntimeError(
+                "No running event loop. stop_consolidation() requires an async context."
+            )
+        self._consolidation_task = None
+
+    def consolidate_now(self) -> Dict[str, int]:
+        """Run one consolidation step synchronously.
+        
+        Returns:
+            Dictionary with counts of promotions at each tier.
+        """
+        if not self.enable_consolidation or self._consolidator is None:
+            return {"stm_to_mtm": 0, "mtm_to_ltm": 0, "ltm_to_gsm": 0, "gsm_to_gm": 0}
+        try:
+            loop = asyncio.get_running_loop()
+            # If loop is running, we can't run synchronously
+            # Note: In a running loop, we can't block. Return empty for now.
+            return {"stm_to_mtm": 0, "mtm_to_ltm": 0, "ltm_to_gsm": 0, "gsm_to_gm": 0}
+        except RuntimeError:
+            # No running loop, create one and run
+            loop = asyncio.new_event_loop()
+            try:
+                return loop.run_until_complete(self._consolidator.consolidate_step())
+            finally:
+                loop.close()
+
+    def get_consolidation_stats(self) -> Dict[str, Any]:
+        """Get consolidation statistics from the consolidator."""
+        if self._consolidator is None:
+            return {"enabled": False}
+        return {"enabled": True, **self._consolidator.get_stats()}
+
+    # ===== Top-Down Attention API =====
+
+    def request_observation(
+        self,
+        roi: Tuple[Position, Position],
+        priority: float = 0.5,
+        reason: str = "",
+        source: str = "planner",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> AttentionRequest:
+        """Request focused observation of a game region (top-down attention).
+
+        This allows higher-level components to direct perception toward
+        specific areas of interest.
+
+        Args:
+            roi: Region of interest as ((x1, y1), (x2, y2))
+            priority: Priority 0.0-1.0 (higher = more important)
+            reason: Why this region needs attention
+            source: Requesting component ('planner', 'consolidator', 'policy', etc.)
+            metadata: Additional context
+
+        Returns:
+            The created AttentionRequest
+        """
+        return self.attention.request_observation(
+            roi=roi,
+            priority=priority,
+            reason=reason,
+            source=source,
+            metadata=metadata,
+        )
+
+    def get_attention_requests(self, n: int = 3) -> List[AttentionRequest]:
+        """Get top N attention requests by priority.
+
+        Args:
+            n: Number of top requests to return
+
+        Returns:
+            List of AttentionRequests sorted by priority
+        """
+        return self.attention.get_top_requests(n)
+
+    def clear_attention_requests(self) -> None:
+        """Clear all current attention requests."""
+        self.attention.clear_requests()
+
+    def get_attention_for_position(self, position: Position, radius: int = 5) -> List[AttentionRequest]:
+        """Get attention requests covering a specific position.
+
+        Args:
+            position: Grid position to check
+            radius: Radius around position (for expanded ROI matching)
+
+        Returns:
+            Matching attention requests sorted by priority
+        """
+        return self.attention.get_requests_for_region(position, radius)
+
+    def get_attention_stats(self) -> Dict[str, Any]:
+        """Get attention manager statistics."""
+        return {
+            "active_requests": len(self.attention.requests),
+            "total_history": len(self.attention.history),
+            "top_priorities": [r.priority for r in self.attention.get_top_requests(5)],
+        }
+
+    def _feed_stm_buffer(
+        self,
+        frame: Any,
+        reward: float = 0.0,
+        action: Optional[str] = None,
+        observation: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Add an event to the STM buffer for consolidation.
+        
+        This is called by internal methods to feed events to the consolidator.
+        """
+        if not self.enable_consolidation:
+            return
+        event = {
+            "frame": frame,
+            "reward": reward,
+            "action": action,
+            "observation": observation,
+            "metadata": metadata or {},
+            "timestamp": time.monotonic(),
+        }
+        self._stm_buffer.append(event)
+        # Also feed to consolidator if available (access property to trigger lazy init)
+        consolidator = self.consolidator
+        if consolidator is not None:
+            consolidator.add_stm_event(
+                frame=frame,
+                reward=reward,
+                action=action,
+                observation=observation,
+                metadata=metadata,
+                timestamp=event["timestamp"],
+            )
 
     def observe_frame(self, frame: object) -> None:
         self.short_term.add(frame)
@@ -261,6 +623,197 @@ class GridMemoryStore:
         if self.database_path is None:
             raise RuntimeError("Persistent memory has no database path")
         return sqlite3.connect(self.database_path)
+
+    # ===== GM (General Memory) Persistence =====
+
+    def save_general_knowledge(self) -> int:
+        """Save GENERAL scope knowledge items to SQLite for cross-session persistence.
+
+        Returns:
+            Number of items saved
+        """
+        if self.database_path is None:
+            return 0
+
+        now = time.monotonic()
+        saved = 0
+        with closing(self._connect()) as connection:
+            for item in self.general_knowledge:
+                if item.scope != Scope.GENERAL:
+                    continue
+                connection.execute(
+                    """
+                    INSERT OR REPLACE INTO general_knowledge
+                    (key, value, confidence, evidence_count, context, provenance,
+                     scope, confirmation_count, validity, transferable, consolidated_from,
+                     created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        item.key,
+                        json.dumps(item.value),
+                        item.confidence,
+                        item.evidence_count,
+                        json.dumps(item.context),
+                        json.dumps(item.provenance),
+                        item.scope.value,
+                        item.confirmation_count,
+                        json.dumps(item.validity),
+                        int(item.transferable),
+                        json.dumps(item.consolidated_from),
+                        item.provenance.get("added_at", now),
+                        now,
+                    ),
+                )
+                saved += 1
+            connection.commit()
+        return saved
+
+    def load_general_knowledge(self) -> int:
+        """Load GENERAL scope knowledge items from SQLite.
+
+        Returns:
+            Number of items loaded
+        """
+        if self.database_path is None:
+            return 0
+
+        loaded = 0
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                """
+                SELECT key, value, confidence, evidence_count, context, provenance,
+                       scope, confirmation_count, validity, transferable, consolidated_from,
+                       created_at, updated_at
+                FROM general_knowledge
+                WHERE scope = ?
+                ORDER BY confidence DESC
+                """,
+                (Scope.GENERAL.value,),
+            ).fetchall()
+
+            for row in rows:
+                (key, value_json, confidence, evidence_count, context_json,
+                 provenance_json, scope_str, confirmation_count, validity_json,
+                 transferable, consolidated_from_json, created_at, updated_at) = row
+
+                item = KnowledgeItem(
+                    key=key,
+                    value=json.loads(value_json),
+                    confidence=confidence,
+                    evidence_count=evidence_count,
+                    context=json.loads(context_json),
+                    provenance=json.loads(provenance_json),
+                    scope=Scope(scope_str),
+                    confirmation_count=confirmation_count,
+                    validity=json.loads(validity_json),
+                    transferable=bool(transferable),
+                    consolidated_from=json.loads(consolidated_from_json),
+                )
+                self.general_knowledge.append(item)
+                loaded += 1
+        return loaded
+
+    def save_gm_patterns(self, gm_patterns: Dict[str, Any]) -> int:
+        """Save GM (General Memory) patterns to SQLite.
+
+        Args:
+            gm_patterns: Dict with pattern_type as key, list of pattern dicts as value
+
+        Returns:
+            Number of patterns saved
+        """
+        if self.database_path is None:
+            return 0
+
+        now = time.monotonic()
+        saved = 0
+        with closing(self._connect()) as connection:
+            for pattern_type, patterns in gm_patterns.items():
+                for pattern in patterns:
+                    pattern_key = pattern.get("key", "")
+                    pattern_value = pattern.get("value", {})
+                    confidence = pattern.get("confidence", 0.0)
+                    source_games = pattern.get("source_games", [])
+                    evidence_count = pattern.get("evidence_count", 0)
+
+                    connection.execute(
+                        """
+                        INSERT OR REPLACE INTO gm_patterns
+                        (pattern_type, pattern_key, pattern_value, confidence,
+                         source_games, evidence_count, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            pattern_type,
+                            pattern_key,
+                            json.dumps(pattern_value),
+                            confidence,
+                            json.dumps(source_games),
+                            evidence_count,
+                            now,
+                            now,
+                        ),
+                    )
+                    saved += 1
+            connection.commit()
+        return saved
+
+    def load_gm_patterns(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Load GM patterns from SQLite.
+
+        Returns:
+            Dict with pattern_type as key, list of pattern dicts as value
+        """
+        if self.database_path is None:
+            return {}
+
+        patterns = defaultdict(list)
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                """
+                SELECT pattern_type, pattern_key, pattern_value, confidence,
+                       source_games, evidence_count, created_at, updated_at
+                FROM gm_patterns
+                ORDER BY confidence DESC
+                """
+            ).fetchall()
+
+            for row in rows:
+                (pattern_type, pattern_key, pattern_value_json, confidence,
+                 source_games_json, evidence_count, created_at, updated_at) = row
+
+                patterns[pattern_type].append({
+                    "key": pattern_key,
+                    "value": json.loads(pattern_value_json),
+                    "confidence": confidence,
+                    "source_games": json.loads(source_games_json),
+                    "evidence_count": evidence_count,
+                    "created_at": created_at,
+                    "updated_at": updated_at,
+                })
+        return dict(patterns)
+
+    def get_gm_persistence_stats(self) -> Dict[str, int]:
+        """Get statistics about GM persistence.
+
+        Returns:
+            Dict with counts of saved items
+        """
+        if self.database_path is None:
+            return {"general_knowledge": 0, "gm_patterns": 0}
+
+        with closing(self._connect()) as connection:
+            gk_count = connection.execute(
+                "SELECT COUNT(*) FROM general_knowledge WHERE scope = ?",
+                (Scope.GENERAL.value,),
+            ).fetchone()[0]
+
+            gp_count = connection.execute(
+                "SELECT COUNT(*) FROM gm_patterns"
+            ).fetchone()[0]
+
+            return {"general_knowledge": gk_count, "gm_patterns": gp_count}
 
     def build_decision_context(
         self,
@@ -403,6 +956,15 @@ class GridMemoryStore:
                     + actual_direction[1] * planned_direction[1]
                 )
                 reward = 0.4 if alignment > 0 else -0.4 if alignment < 0 else 0.0
+
+        # Feed to STM buffer for consolidation
+        self._feed_stm_buffer(
+            frame={"context": context, "planned_direction": planned_direction},
+            reward=reward,
+            action=details.get("action"),
+            observation=details.get("observation"),
+            metadata={"outcome": outcome, "before_position": before_position, "target_position": target_position},
+        )
 
         self.record_decision_case(context, planned_direction, reward, outcome)
 
@@ -848,16 +1410,188 @@ class GridMemoryStore:
         value: Any,
         confidence: float,
         context: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        self.knowledge.append(
-            KnowledgeItem(
-                key=key,
-                value=value,
-                confidence=confidence,
-                evidence_count=1,
-                context=context or {},
-            )
+        scope: Scope = Scope.EPISODE,
+        transferable: bool = False,
+        supersedes: Optional[str] = None,
+    ) -> KnowledgeItem:
+        """Add or update knowledge with validity tracking.
+
+        Args:
+            key: Knowledge key
+            value: Knowledge value
+            confidence: Confidence level (0-1)
+            context: Context dict
+            scope: Scope of applicability
+            transferable: Whether this can transfer to other games
+            supersedes: Key of knowledge this supersedes (for decay tracking)
+
+        Returns:
+            The created/updated KnowledgeItem
+        """
+        from .memory_consolidator import SourceMemory
+
+        # Check if we're superseding existing knowledge
+        existing_item = None
+        if supersedes:
+            for item in self.knowledge:
+                if item.key == supersedes:
+                    existing_item = item
+                    break
+
+        # Build validity tracking
+        now = time.monotonic()
+        validity = {
+            "timestamp": now,
+            "superseded_by": None,
+            "decay_rate": 0.01,  # 1% per consolidation cycle
+            "last_confirmed": now,
+            "confirmation_count": 0,
+        }
+
+        # If superseding, mark the old item
+        if existing_item:
+            existing_item.validity["superseded_by"] = key
+            existing_item.validity["last_confirmed"] = now
+
+        item = KnowledgeItem(
+            key=key,
+            value=value,
+            confidence=confidence,
+            evidence_count=1,
+            context=context or {},
+            provenance={
+                "source_tier": SourceMemory.LTM.value,
+                "added_at": now,
+                "supersedes": supersedes,
+            },
+            scope=scope,
+            transferable=transferable,
+            validity=validity,
         )
+
+        self.knowledge.append(item)
+
+        # Feed to STM buffer for consolidation tracking
+        self._feed_stm_buffer(
+            frame={"key": key, "value": value},
+            reward=0.0,
+            action="add_knowledge",
+            observation={"key": key, "confidence": confidence},
+            metadata={"context": context or {}},
+        )
+
+        return item
+
+    def confirm_knowledge(self, key: str, confidence_delta: float = 0.1) -> bool:
+        """Confirm a knowledge item, increasing its confidence and updating validity.
+
+        Args:
+            key: Knowledge key to confirm
+            confidence_delta: Amount to increase confidence
+
+        Returns:
+            True if knowledge was found and confirmed
+        """
+        now = time.monotonic()
+        for item in self.knowledge:
+            if item.key == key:
+                item.confidence = min(1.0, item.confidence + confidence_delta)
+                item.confirmation_count = item.validity.get("confirmation_count", 0) + 1
+                item.validity["last_confirmed"] = now
+                item.validity["confirmation_count"] = item.confirmation_count
+                return True
+        return False
+
+    def decay_knowledge(self, decay_factor: float = 0.99) -> int:
+        """Apply decay to knowledge confidence based on time since last confirmation.
+
+        Args:
+            decay_factor: Multiplier for confidence (default 0.99 = 1% decay)
+
+        Returns:
+            Number of items decayed
+        """
+        now = time.monotonic()
+        decayed = 0
+        for item in self.knowledge:
+            # Skip if already superseded
+            if item.validity.get("superseded_by"):
+                continue
+
+            last_confirmed = item.validity.get("last_confirmed", item.provenance.get("added_at", now))
+            decay_rate = item.validity.get("decay_rate", 0.01)
+
+            # Time-based decay
+            time_elapsed = now - last_confirmed
+            if time_elapsed > 60:  # Decay after 60 seconds
+                # Apply decay based on time elapsed (per minute)
+                minutes = time_elapsed / 60.0
+                decay = decay_factor ** minutes
+                old_confidence = item.confidence
+                item.confidence *= decay
+                decayed += 1
+
+                # If confidence drops too low, mark for removal
+                if item.confidence < 0.1:
+                    item.validity["superseded_by"] = "decayed"
+                    item.validity["decayed_at"] = now
+
+        return decayed
+
+    def supersede_knowledge(self, old_key: str, new_key: str, new_value: Any, new_confidence: float, context: Optional[Dict[str, Any]] = None) -> KnowledgeItem:
+        """Replace old knowledge with new knowledge, maintaining traceability.
+
+        Args:
+            old_key: Key of knowledge to supersede
+            new_key: Key for new knowledge
+            new_value: New knowledge value
+            new_confidence: Confidence for new knowledge
+            context: Context for new knowledge
+
+        Returns:
+            The new KnowledgeItem
+        """
+        return self.add_knowledge(
+            key=new_key,
+            value=new_value,
+            confidence=new_confidence,
+            context=context,
+            supersedes=old_key,
+        )
+
+    def get_valid_knowledge(self, scope: Optional[Scope] = None) -> List[KnowledgeItem]:
+        """Get knowledge items that are still valid (not superseded/decayed).
+
+        Args:
+            scope: Optional scope filter
+
+        Returns:
+            List of valid KnowledgeItems
+        """
+        valid = []
+        for item in self.knowledge:
+            # Skip superseded or decayed
+            if item.validity.get("superseded_by"):
+                continue
+            # Skip if confidence too low
+            if item.confidence < 0.1:
+                continue
+            if scope and item.scope != scope:
+                continue
+            valid.append(item)
+        return valid
+
+    def prune_invalid_knowledge(self) -> int:
+        """Remove invalid (superseded/decayed) knowledge items.
+
+        Returns:
+            Number of items removed
+        """
+        original_len = len(self.knowledge)
+        self.knowledge = [item for item in self.knowledge
+                         if not item.validity.get("superseded_by")
+                         and item.confidence >= 0.1]
+        return original_len - len(self.knowledge)
 
     def observe_entity(
         self,
@@ -938,6 +1672,15 @@ class GridMemoryStore:
 
     def record_experience(self, event: Dict[str, Any]) -> None:
         self.experiences.append(event)
+
+        # Feed to STM buffer for consolidation
+        self._feed_stm_buffer(
+            frame=event,
+            reward=event.get("reward", 0.0),
+            action=event.get("action"),
+            observation=event.get("observation"),
+            metadata=event.get("metadata", {}),
+        )
 
     def record(self, entry: Dict[str, Any]) -> None:
         self.record_experience(entry)

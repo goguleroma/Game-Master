@@ -80,6 +80,9 @@ def test_dqn_behavior_cloning_trains_only_allowed_actions() -> None:
         action_count=3,
         seed=17,
         epsilon_start=0.2,
+        device=torch.device("cpu"),
+        hidden_size=64,
+        num_layers=2,
     )
     samples = [
         ((0.0, 1.0), 0, (True, True, False)),
@@ -265,6 +268,7 @@ def test_neural_reward_tracks_planner_progress_when_target_is_hidden() -> None:
     assert stalled_reward == pytest.approx(0.08)
 
 
+@pytest.mark.slow
 def test_neural_experiment_smoke_saves_unpromoted_candidate(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

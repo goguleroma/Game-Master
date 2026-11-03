@@ -1,12 +1,20 @@
 from collections import Counter
 import math
-from typing import Any
+from typing import Any, Optional
 
 from core.types import Action, ActionResult, GameState
 from learning.dqn import DQNAgent
 from .memory import GridMemoryStore
 from .planner import Planner
 from .world_model import WorldModel
+
+# Optional DirectML import
+try:
+    import torch_directml
+    DIRECTML_AVAILABLE = True
+except ImportError:
+    DIRECTML_AVAILABLE = False
+import torch
 
 
 class NeuralGridPolicy:
@@ -21,12 +29,39 @@ class NeuralGridPolicy:
         seed: int = 0,
         training: bool = False,
         epsilon_start: float = 1.0,
+        device: Optional[torch.device] = None,
+        # New architecture parameters
+        hidden_size: int = 512,
+        num_layers: int = 3,
+        use_spatial: bool = False,
+        spatial_shape: tuple[int, int] | None = None,
+        num_aux_heads: int = 3,
+        dropout: float = 0.1,
+        aux_loss_weight: float = 0.1,
+        policy_distill_weight: float = 0.05,
     ) -> None:
+        # Determine device
+        if device is not None:
+            self.device = device
+        elif DIRECTML_AVAILABLE and torch_directml.is_available():
+            self.device = torch_directml.device()
+        else:
+            self.device = torch.device("cpu")
+        
         self.agent = DQNAgent(
             self.FEATURE_COUNT,
             self.ACTION_COUNT,
             seed=seed,
             epsilon_start=epsilon_start,
+            device=self.device,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            use_spatial=use_spatial,
+            spatial_shape=spatial_shape,
+            num_aux_heads=num_aux_heads,
+            dropout=dropout,
+            aux_loss_weight=aux_loss_weight,
+            policy_distill_weight=policy_distill_weight,
         )
         self.training = training
         self.world_model = WorldModel()
