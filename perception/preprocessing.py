@@ -55,6 +55,15 @@ class PreprocessConfig:
     device: DeviceType = DeviceType.AUTO
     half_precision: bool = False  # Use float16
     batch_dim: bool = True  # Add batch dimension
+    
+    def __post_init__(self):
+        # Convert string device to enum
+        if isinstance(self.device, str):
+            try:
+                self.device = DeviceType(self.device.lower())
+            except ValueError:
+                logger.warning(f"Unknown device '{self.device}', falling back to AUTO")
+                self.device = DeviceType.AUTO
 
 
 class PreprocessingPipeline:
