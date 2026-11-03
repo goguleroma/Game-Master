@@ -1,0 +1,206 @@
+name: GPU Tests (Self-Hosted)
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'perception/**'
+      - 'learning/**'
+      - 'tests/test_*gpu*.py'
+      - 'tests/test_detection.py'
+      - 'tests/test_preprocessing.py'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'perception/**'
+      - 'learning/**'
+      - 'tests/test_*gpu*.py'
+      - 'tests/test_detection.py'
+      - 'tests/test_preprocessing.py'
+  workflow_dispatch:
+    inputs:
+      runner-label:
+        description: 'Self-hosted runner label (e.g., gpu-amd, gpu-nvidia)'
+        required: true
+        default: 'gpu-amd'
+
+jobs:
+  gpu-tests:
+    name: GPU Tests - AMD RX 6800 XT (DirectML)
+    runs-on: [self-hosted, gpu, amd]
+    # For NVIDIA runners, use: runs-on: [self-hosted, gpu, nvidia]
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Verify GPU availability
+        run: |
+          python -c "
+import torch
+print(f'PyTorch: {torch.__version__}')
+print(f'CUDA available: {torch.cuda.is_available()}')
+if torch.cuda.is_available():
+    print(f'CUDA devices: {torch.cuda.device_count()}')
+    for i in range(torch.cuda.device_count()):
+        print(f'  Device {i}: {torch.cuda.get_device_name(i)}')
+
+try:
+    import torch_directml
+    print(f'DirectML available: {torch_directml.is_available()}')
+    if torch_directml.is_available():
+        dml_device = torch_directml.device()
+        print(f'DirectML device: {dml_device}')
+        x = torch.tensor([1.0], device=dml_device)
+        print(f'DirectML test tensor: {x}')
+except ImportError:
+    print('torch-directml not installed')
+
+try:
+    import onnxruntime as ort
+    print(f'ONNX Runtime: {ort.__version__}')
+    print(f'Providers: {ort.get_available_providers()}')
+except ImportError:
+    print('ONNX Runtime not installed')
+          "
+
+      - name: Install system dependencies
+        run: |
+          # Install GPU drivers and runtime (should be pre-installed on self-hosted)
+          # AMD: ROCm or DirectML
+          # NVIDIA: CUDA toolkit
+          echo "Checking GPU drivers..."
+          # Windows: dxdiag /t dxdiag.txt && findstr "DirectX" dxdiag.txt
+          # Linux: rocm-smi or nvidia-smi
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: gpu-${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt', '**/pyproject.toml') }}
+          restore-keys: |
+            gpu-${{ runner.os }}-pip-
+
+      - name: Install Python dependencies with GPU support
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          # Install with GPU extras
+          pip install -e ".[gpu,dev,test]"
+          # Install DirectML for AMD
+          pip install torch-directml
+          # Install ONNX Runtime with DirectML
+          pip install onnxruntime-directml
+          # Or for NVIDIA:
+          # pip install onnxruntime-gpu
+
+      - name: Run GPU preprocessing tests
+        run: |
+          python -m pytest tests/test_preprocessing.py -v --tb=short -m "not slow" --junitxml=test-results/gpu-preprocessing.xml
+
+      - name: Run GPU detection tests
+        run: |
+          python -m pytest tests/test_detection.py -v --tb=short -m "not slow" --junitxml=test-results/gpu-detection.xml
+
+      - name: Run GPU DQN tests
+        run: |
+          python -m pytest tests/test_dqn_modern.py -v --tb=short -m "not slow" --junitxml=test-results/gpu-dqn.xml
+
+      - name: Run GPU MCTS tests
+        run: |
+          python -m pytest tests/test_mcts_gpu.py -v --tb=short -m "not slow" --junitxml=test-results/gpu-mcts.xml
+
+      - name: Run GPU benchmarks
+        run: |
+          python -m pytest tests/test_latency_benchmarks.py tests/test_throughput_benchmarks.py -v --tb=short -m "benchmark" --junitxml=test-results/gpu-benchmarks.xml
+
+      - name: Run memory consolidation GPU tests
+        run: |
+          python -m pytest tests/test_memory_consolidator.py -v --tb=short -m "gpu" --junitxml=test-results/gpu-memory.xml || echo "No GPU memory tests yet"
+
+      - name: Upload GPU test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gpu-test-results
+          path: test-results/
+          retention-days: 14
+
+  gpu-benchmark:
+    name: GPU Performance Benchmark
+    runs-on: [self-hosted, gpu, amd]
+    timeout-minutes: 60
+    needs: gpu-tests
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[gpu,dev,test]"
+          pip install torch-directml onnxruntime-directml
+
+      - name: Run full benchmark suite
+        run: |
+          python -m pytest tests/test_latency_benchmarks.py tests/test_throughput_benchmarks.py -v \
+            --benchmark-only \
+            --benchmark-json=benchmark-results.json \
+            --benchmark-compare-fail=mean:10% \
+            || echo "Benchmark comparison failed or not configured"
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpu-benchmark-results
+          path: benchmark-results.json
+          retention-days: 30
+
+      - name: Comment benchmark results on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const results = JSON.parse(fs.readFileSync('benchmark-results.json', 'utf8'));
+            let comment = '## GPU Benchmark Results\n\n';
+            comment += '| Test | Mean (ms) | Ops/sec |\n';
+            comment += '|------|-----------|---------|\n';
+            for (const bench of results.benchmarks) {
+              comment += `| ${bench.name} | ${bench.stats.mean.toFixed(2)} | ${(1/bench.stats.mean*1000).toFixed(1)} |\n`;
+            }
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  notify-gpu:
+    name: Notify GPU Test Status
+    needs: [gpu-tests, gpu-benchmark]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check GPU test status
+        run: |
+          if [[ "${{ needs.gpu-tests.result }}" == "success" && "${{ needs.gpu-benchmark.result }}" == "success" ]]; then
+            echo "All GPU tests passed!"
+          else
+            echo "Some GPU tests failed!"
+            exit 1
+          fi

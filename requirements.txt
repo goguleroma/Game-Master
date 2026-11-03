@@ -1,3 +1,22 @@
 # Requisiti minimi
-
 pytest>=8.0.0
+
+# Screen capture
+dxcam>=0.1.0
+mss>=6.1.0
+
+# Image processing
+opencv-python>=4.8.0
+pillow>=10.0.0
+numpy>=1.24.0
+
+# GPU acceleration (AMD DirectML)
+torch>=2.0.0
+torch-directml>=0.1.0
+
+# OCR
+paddleocr>=2.7.0
+pytesseract>=0.3.10
+
+# Object detection
+onnxruntime-directml>=1.16.0

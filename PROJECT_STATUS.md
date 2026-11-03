@@ -39,6 +39,16 @@ Il progetto ha un core di orchestrazione indipendente dall'ambiente e un adapter
 - test del contratto policy/esecutore: presenti
 - planner, input adapter e memoria spaziale: presenti soltanto nell'adapter simulato
 - gioco simulato a griglia 30×30 con visuale raggio 4, ostacolo mobile, obiettivo mobile ogni due mosse, inseguitore e combattimento a PV: presente in `simulated_game/`
+<<<<<<< Updated upstream
+=======
+- **PERCEZIONE REALE (P0 COMPLETATA)** — Capture/preprocessing/OCR/detection reali implementati in `perception/`:
+  - `ScreenCapture`: dxcam (DirectX) primary, mss fallback; 30fps @ 1920x1080 target; <16ms frame-to-frame; ROI support; frame differencing; ring buffer; context manager
+  - `PreprocessingPipeline`: torch-directml per AMD RX 6800 XT; auto device selection (DirectML→CUDA→CPU); FP16 support; specialized pipelines per detection/classification/OCR
+  - `OCRProcessor`: PaddleOCR primary, Tesseract fallback; HUD parsing strutturato (health, mana, gold, score, ammo, ecc.); regex pattern matching
+  - `Detection`: YOLOv8/v9/v10 + RT-DETR ONNX via ONNX Runtime DirectML; NMS, letterbox preprocessing
+  - `StateExtractor`: integra tutti i moduli; implementa ObservationAdapter (get_frame + extract); MiniGrid mode; goal inference; performance tracking
+- combattimento rebalanced: danno attacco portato da 3 a 5 PV in `GridGame._execute_combat`; con 10 PV a parte la posta in gioco è paragonabile all'urgenza di raggiungere l'obiettivo; suite 69 test superati; commit `a6d7b70` sul branch `simulated-game`.
+>>>>>>> Stashed changes
 - memoria traccia entità anonime e inferisce categorie descrittive provvisorie da osservazioni ripetute; non inferisce ancora semantica o pericolosità
 - learner di controlli opachi: il planner indica la direzione verso obiettivo/frontiera, il learner inferisce gli spostamenti prodotti da ogni controllo e seleziona quello compatibile; persiste gli effetti per gioco. Non riceve la mappatura semantica; associazioni causali non garantite.
 - memoria spaziale e policy di esplorazione collegate all'engine soltanto attraverso la composizione dell'adapter di test
@@ -59,11 +69,11 @@ Il progetto ha un core di orchestrazione indipendente dall'ambiente e un adapter
 - latenza di `process_frame` su frame mock: media 7,35 µs, p95 9,20 µs su 1.000 chiamate, logging disabilitato; non rappresenta prestazioni su un gioco reale
 
 ### Funzionalità mancanti o placeholder
-- capture reale dello schermo
-- percezione reale del gioco
-- OCR e riconoscimento visivo
+- ~~capture reale dello schermo~~ **IMPLEMENTATO** (dxcam/mss)
+- ~~percezione reale del gioco~~ **IMPLEMENTATO** (preprocessing, detection, OCR)
+- ~~OCR e riconoscimento visivo~~ **IMPLEMENTATO** (PaddleOCR/Tesseract)
 - input reale su tastiera/mouse
-- gioco target operativo
+- gioco target operativo (MiniGrid adapter in progress)
 - consolidamento verificato e trasferimento alla memoria generale
 - apprendimento generale dei controlli e delle dinamiche
 - generalizzazione tra giochi
@@ -79,15 +89,21 @@ Il progetto ha un core di orchestrazione indipendente dall'ambiente e un adapter
 
 ## Limiti noti
 
-- il sistema non è ancora in grado di vedere un gioco reale;
-- la percezione è ancora mockata;
+- il sistema può ora catturare frame reali (dxcam/mss) ma non è ancora collegato a un gioco reale operativo;
+- la percezione reale (capture, preprocessing, OCR, detection) è implementata ma richiede integrazione con MiniGrid adapter;
 - il planner di navigazione resta basato su BFS e frontiere; gli effetti dei controlli sono appresi, ma strategia generale e adattamento a obiettivi mobili non sono dimostrati;
 - non esiste ancora un benchmark reale di gioco;
 - la generalizzazione non è ancora verificata.
 
 ## Prossima azione
 
+<<<<<<< Updated upstream
 Eseguire un'ablazione appaiata del retrieval episodico che mantenga identiche le prove persistenti dei controlli, ripetere gli ordini di seed e usare il protocollo completo da 200 turni. Conservare separati i risultati della policy neurale: il fine-tuning DQN ha portato la validation da 11/20 a 0/20 e non è promosso.
+=======
+**Fase 3 COMPLETATA** — Ablazione retrieval episodico eseguita e attribuzione confermata. L'architettura simulata ha raggiunto il limite empirico.
+**Fase 4 IN CORSO** — Percezione reale **COMPLETATA** (capture/preprocessing/OCR/detection). Prossimo: MiniGrid adapter + PathTree Planning (MCTS-Lite con belief state, integrazione retrieval come prior, warm-start tree reuse). Validazione transfer su secondo ambiente.
+Conservare separati i risultati della policy neurale: il fine-tuning DQN ha portato la validation da 11/20 a 0/20 e non è promosso.
+>>>>>>> Stashed changes
 
 ## Esperimento neurale in corso
 

@@ -1,8 +1,12 @@
 from core.engine import ActionExecutor, DecisionPolicy, GameEngine
-from simulated_game.agent import ExplorationPolicy
-from simulated_game.agent.memory import GridMemoryStore
-from simulated_game.agent.planner import GridStrategyParameters
-from simulated_game.game import GridGame, GridGameInputAdapter
+from adapters.grid_30x30 import (
+    GridExplorationPolicy,
+    GridMemoryStore,
+    GridStrategyParameters,
+    GridGame,
+    GridGameInputAdapter,
+    GridObservationAdapter,
+)
 
 
 def create_grid_engine(
@@ -15,7 +19,7 @@ def create_grid_engine(
     agent_policy = (
         policy
         if policy is not None
-        else ExplorationPolicy(strategy)
+        else GridExplorationPolicy(strategy)
     )
     game_memory = (
         memory
@@ -27,4 +31,6 @@ def create_grid_engine(
         if input_adapter is not None
         else GridGameInputAdapter(game)
     )
-    return GameEngine(agent_policy, game_adapter, game_memory)
+    observation_adapter = GridObservationAdapter()
+    # GameEngine expects: policy, input_adapter, observation_adapter, memory
+    return GameEngine(agent_policy, game_adapter, observation_adapter, game_memory)

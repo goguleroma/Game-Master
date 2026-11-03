@@ -1,9 +1,9 @@
 from unittest.mock import patch
 
 from core.types import Action, ActionResult
-from simulated_game.agent.exploration_policy import ExplorationPolicy
-from simulated_game.agent.memory import GridMemoryStore as MemoryStore
-from simulated_game.game import GridGame
+from adapters.grid_30x30 import GridExplorationPolicy as ExplorationPolicy
+from adapters.grid_30x30 import GridMemoryStore as MemoryStore
+from adapters.grid_30x30 import GridGame
 from simulated_game.runtime import create_grid_engine
 
 
@@ -219,13 +219,15 @@ def test_enemy_can_be_seen_without_a_new_observation_field() -> None:
     frame = game.observe()
     grid = frame["hud"]["grid"]
 
-    assert [3, 1] in grid["obstacles"]
+    # Enemy should NOT appear in obstacles (only static/moving obstacles)
+    assert [3, 1] not in grid["obstacles"]
     assert "enemy" not in frame
     assert "enemy" not in frame["objects"]
+    # Enemy should appear in entities
     assert {
         "id": "entity-2",
         "position": [3, 1],
-        "health": 10,
+        "health": 8,  # ENEMY_MAX_HEALTH
     } in grid["entities"]
 
 
@@ -356,8 +358,8 @@ def test_health_is_visible_without_an_enemy_label_or_combat_instructions() -> No
 
     frame = game.observe()
 
-    assert frame["hud"]["health"] == 10
-    assert {"id": "entity-2", "position": [4, 1], "health": 10} in frame["hud"]["grid"]["entities"]
+    assert frame["hud"]["health"] == 20  # PLAYER_MAX_HEALTH
+    assert {"id": "entity-2", "position": [4, 1], "health": 8} in frame["hud"]["grid"]["entities"]  # ENEMY_MAX_HEALTH
     assert frame["controls"] == [f"control_{index}" for index in range(1, 7)]
     assert "enemy" not in frame
     assert "attack" not in str(frame).lower()
@@ -450,8 +452,8 @@ def test_defense_prevents_damage_and_an_attacking_entity_retreats() -> None:
     with patch.object(game, "_enemy_combat_choice", return_value="attack"):
         result = game.execute(Action(name="control_6"))
 
-    assert game.player_health == 10
-    assert game.enemy_health == 10
+    assert game.player_health == 20  # PLAYER_MAX_HEALTH
+    assert game.enemy_health == 8  # ENEMY_MAX_HEALTH
     assert game.enemy_position is not None
     assert game._distance(game.position, game.enemy_position) == 2
     assert result.details == {"status": "completed"}
@@ -465,8 +467,8 @@ def test_an_attacking_entity_is_not_damaged_when_it_defends() -> None:
     with patch.object(game, "_enemy_combat_choice", return_value="defend"):
         result = game.execute(Action(name="control_5"))
 
-    assert game.player_health == 10
-    assert game.enemy_health == 10
+    assert game.player_health == 20  # PLAYER_MAX_HEALTH
+    assert game.enemy_health == 8  # ENEMY_MAX_HEALTH
     assert game.enemy_position == (2, 1)
     assert result.details == {"status": "completed"}
 
@@ -479,8 +481,13 @@ def test_combat_attacks_deal_three_damage() -> None:
     with patch.object(game, "_enemy_combat_choice", return_value="attack"):
         game.execute(Action(name="control_5"))
 
+<<<<<<< Updated upstream
     assert game.player_health == 7
     assert game.enemy_health == 7
+=======
+    assert game.player_health == 17  # 20 - 3 (ATTACK_DAMAGE)
+    assert game.enemy_health == 5  # 8 - 3 (ATTACK_DAMAGE)
+>>>>>>> Stashed changes
 
 
 def test_player_attack_can_remove_entity_as_a_regular_obstacle() -> None:
@@ -489,16 +496,20 @@ def test_player_attack_can_remove_entity_as_a_regular_obstacle() -> None:
     game.enemy_position = (2, 1)
     game.obstacles = {(9, 9)}
     with patch.object(game, "_enemy_combat_choice", return_value="attack"):
+<<<<<<< Updated upstream
         for _ in range(4):
+=======
+        for _ in range(3):  # 8 health, 3 damage per attack = 3 attacks needed
+>>>>>>> Stashed changes
             game.enemy_position = (2, 1)
             game.execute(Action(name="control_5"))
 
-    assert game.enemy_position is None
-    assert game.enemy_health == 0
+    # The specific enemy at (2, 1) should be dead and removed
+    assert not any(e["position"] == (2, 1) for e in game.enemies)
     assert (2, 1) in game.static_obstacles
     frame = game.observe()
     assert [2, 1] in frame["hud"]["grid"]["obstacles"]
-    assert all(entity["id"] != "entity-2" for entity in frame["hud"]["grid"]["entities"])
+    assert all(entity["id"] != "entity-2" or entity["position"] != [2, 1] for entity in frame["hud"]["grid"]["entities"])
 
 
 def test_player_death_ends_game_as_a_loss() -> None:

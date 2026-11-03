@@ -3,8 +3,6 @@ from typing import Any, Callable, Protocol
 from core.memory import MemoryStore
 from core.logger import Logger
 from core.types import Action, ActionResult, GameState, Observation
-from perception.capture import ScreenCapture
-from perception.state_extractor import StateExtractor
 
 
 class DecisionPolicy(Protocol):
@@ -42,13 +40,12 @@ class GameEngine:
         self,
         policy: DecisionPolicy,
         input_adapter: ActionExecutor,
+        observation_adapter: "ObservationAdapter",
         memory: AgentMemory | None = None,
-        state_extractor: ObservationAdapter | None = None,
         max_steps: int | None = None,
         should_stop: Callable[[], bool] | None = None,
     ) -> None:
-        self.capture = ScreenCapture()
-        self.state_extractor = state_extractor or StateExtractor()
+        self.observation_adapter = observation_adapter
         self.policy = policy
         self.input_adapter = input_adapter
         self.memory = memory if memory is not None else MemoryStore()
@@ -66,7 +63,7 @@ class GameEngine:
             if self.max_steps is not None and steps >= self.max_steps:
                 self.logger.info(f"Step limit of {self.max_steps} reached; engine loop exiting.")
                 return
-            frame = self.capture.get_frame()
+            frame = self.observation_adapter.get_frame()
             if frame is None:
                 self.logger.warning("No frame captured; retrying.")
                 continue
@@ -83,7 +80,7 @@ class GameEngine:
         )
         self.logger.info(f"Observation received: {frame}")
 
-        state = self.state_extractor.extract(observation)
+        state = self.observation_adapter.extract(observation)
         self.memory.observe_frame(state)
         self.logger.info(f"Extracted state with confidence={state.confidence}")
 
